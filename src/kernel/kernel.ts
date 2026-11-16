@@ -211,11 +211,17 @@ export class Kernel {
   }
 
   private async onLeadershipGained(): Promise<void> {
-    const { Reconciler } = await import('./reconciler.ts');
-    await new Reconciler(this).run();
-    if (!this.mailboxTimer) {
-      this.mailboxTimer = setInterval(() => void this.consumeMailbox(), 5_000);
-      (this.mailboxTimer as unknown as { unref?: () => void }).unref?.();
+    try {
+      const { Reconciler } = await import('./reconciler.ts');
+      await new Reconciler(this).run();
+    } catch (e) {
+      // Reconciler 失败不得饿死邮箱消费（实测：孤儿会话查询抛错曾致 mailboxTimer 永不启动）
+      this.log.error('kernel', 'Reconciler 异常（已隔离）', { error: String(e) });
+    } finally {
+      if (!this.mailboxTimer) {
+        this.mailboxTimer = setInterval(() => void this.consumeMailbox(), 5_000);
+        (this.mailboxTimer as unknown as { unref?: () => void }).unref?.();
+      }
     }
   }
 

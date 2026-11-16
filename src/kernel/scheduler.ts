@@ -50,6 +50,7 @@ export class Scheduler {
       await this.tryDispatch();
       await this.runReviewFlow();
       await this.runMergeTrain();
+      await this.kernel.consumeMailbox(); // 兜底消费（不依赖 onLeadershipGained 的 timer 存活）
     } finally {
       this.ticking = false;
     }
