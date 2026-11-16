@@ -68,6 +68,10 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
   // 3. gates.yaml（人类所有）
   put('gates.yaml', readFileSync(join(root, 'templates', 'gates.yaml'), 'utf8').replaceAll('{{TEST_RUNNER}}', runner));
 
+  // 3.5 .gitignore（实测教训：dev 的 bun install 生成 node_modules，无 ignore 会被内核自动
+  //     提交裹进 diff → 范围违规循环）
+  put('.gitignore', readFileSync(join(root, 'templates', 'gitignore'), 'utf8'));
+
   // 4. AGENTS.md 协议块（V2 只认 AGENTS.md，不回退 CLAUDE.md [D]；人类所有文件，只追加生成块）
   const agentsPath = join(target, 'AGENTS.md');
   const block = readFileSync(join(root, 'templates', 'AGENTS.block.md'), 'utf8');

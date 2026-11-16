@@ -99,7 +99,8 @@ export async function runGatePipeline(kernel: Kernel, taskId: string, attempt: n
     } else {
       const st = git(worktree, ['status', '--porcelain']);
       if (st.ok && st.stdout.trim() !== '') {
-        git(worktree, ['add', '-A']);
+        // 依赖树排除（双保险：模板已发 .gitignore，此处仍强制排除——防人类项目漏配）
+        git(worktree, ['add', '-A', '--', ':/', ':(exclude)node_modules', ':(exclude)node_modules/**']);
         git(worktree, ['-c', 'user.name=DCAE Kernel', '-c', 'user.email=dcae@kernel.local', 'commit', '-m', `dcae(dev): ${taskId} attempt ${attempt}`]);
         kernel.log.info('gates', 'dev 改动已由内核提交', { taskId, worktree });
       }

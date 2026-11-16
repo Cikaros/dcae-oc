@@ -1,0 +1,11 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# DCAE-OC 内核状态
+.dcae/
+
+# 环境与日志
+*.log
+.env*
