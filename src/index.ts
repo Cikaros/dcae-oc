@@ -66,11 +66,11 @@ export default Plugin.define({
     // R1：每实例注册全套（工具目录按 location 生效，任务会话运行在 worktree location）
     try { registerTools(ctx, kernel); probe('registerTools-ok'); } catch (e) { probe('registerTools', e); throw e; }
     try { registerPermissionHook(ctx, kernel); probe('permissionHook-ok'); } catch (e) { probe('permissionHook', e); throw e; }
-    ctx.command.transform((editor) => {
-      // 命令层占位（R1 要求命令域注册）；/dcae:* 用户命令为增量内容
-      void editor;
-    });
-    probe('commandTransform-ok');
+    try {
+      const { registerCommands } = await import('./commands/register.ts');
+      registerCommands(ctx, kernel);
+      probe('commands-ok');
+    } catch (e) { probe('commands', e); throw e; }
     if (process.env.DCAE_CONTRACT === '1') {
       // 契约模式：单一 id 'dcae' 定义（含 status + contract 方法）——同 id 重复注册会冲突
       const { registerContractRpc } = await import('./rpc/contract.ts');
