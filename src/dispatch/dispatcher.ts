@@ -51,7 +51,15 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
     const existing = (await kernel.host().listWorktrees(kernel.opts.projectID)) ?? [];
     const hit = existing.find((w) => normalizeWt(w.directory).endsWith('/' + wtName));
     if (hit && existsSync(hit.directory)) {
-      worktreeDir = hit.directory;
+      // 基线校验：worktree HEAD 必须可达本任务的分叉基线（基线过期的旧 worktree 会缺依赖产物）
+      const { git } = await import('../util/git.ts');
+      const anc = git(hit.directory, ['merge-base', '--is-ancestor', forkSha, 'HEAD']);
+      if (anc.ok) {
+        worktreeDir = hit.directory;
+      } else {
+        kernel.log.info('dispatch', 'worktree 基线过期，重建', { taskId: task.id, forkSha });
+        try { await kernel.host().removeWorktree(kernel.opts.projectID, hit.directory, true); } catch { /* 尽力 */ }
+      }
     } else if (hit) {
       // 死注册（物理目录已删）：清注册后重建
       try { await kernel.host().removeWorktree(kernel.opts.projectID, hit.directory, true); } catch { /* 尽力 */ }
