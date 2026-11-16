@@ -65,7 +65,7 @@ export default Plugin.define({
     const kernel = handle.kernel;
     const instanceId = `i_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const isCanonical = toPosix(ctx.location.directory) === canonical;
-    kernel.attachInstance(instanceId, () => createOpenCodeHost({ ctx, httpBase: options.serverUrl }), isCanonical);
+    kernel.attachInstance(instanceId, () => createOpenCodeHost({ ctx, httpBase: options.serverUrl }), isCanonical, toPosix(ctx.location.directory));
 
     // R1：每实例注册全套（工具目录按 location 生效，任务会话运行在 worktree location）
     try { registerTools(ctx, kernel); probe('registerTools-ok'); } catch (e) { probe('registerTools', e); throw e; }

@@ -119,10 +119,12 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
   } catch (e) {
     return { ok: false, detail: `会话创建失败：${String(e)}` };
   }
+  // 登记会话 location（ctx.session 域 per-location——后续调用必须路由到该 location 的实例）
+  kernel.recordSessionLocation(sid, worktreeDir);
 
   // 5. 环境白名单（PUT 整体替换）
   try {
-    await kernel.host().setEnvironment(sid, {
+    await kernel.hostForSession(sid).setEnvironment(sid, {
       DCAE_TASK: task.id,
       DCAE_ATTEMPT: String(t.attempt),
       DCAE_ROLE: role,
@@ -132,7 +134,7 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
   // 6. 常驻上下文 entries（≤256 KiB 编译期拒绝在 HostPort.putInstruction 内）
   try {
     const entry = buildContextEntry(kernel, task, role);
-    await kernel.host().putInstruction(sid, 'dcae.task', entry);
+    await kernel.hostForSession(sid).putInstruction(sid, 'dcae.task', entry);
   } catch (e) {
     kernel.log.warn('dispatch', 'instruction entry 写入失败（后备：admission 文本携带）', { error: String(e) });
   }
@@ -140,7 +142,7 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
   // 7. admission prompt
   const admissionId = messageId();
   try {
-    await kernel.host().prompt(sid, admissionText(task, role, t.attempt), { messageId: admissionId, delivery: 'steer' });
+    await kernel.hostForSession(sid).prompt(sid, admissionText(task, role, t.attempt), { messageId: admissionId, delivery: 'steer' });
   } catch (e) {
     return { ok: false, detail: `admission prompt 失败：${String(e)}` };
   }

@@ -80,7 +80,7 @@ export async function auditTesterReads(kernel: Kernel, taskId: string, scratch: 
   const GIT_OBJ_PATTERNS = ['refs/dcae', 'git show', 'git cat-file', 'git log'];
 
   try {
-    const msgs = await kernel.host().sessionMessages(t.sessionId);
+    const msgs = await kernel.hostForSession(t.sessionId).sessionMessages(t.sessionId);
     for (const m of msgs) {
       for (const tool of m.tools ?? []) {
         if (!/read|glob|grep|shell|list/i.test(tool.name)) continue;

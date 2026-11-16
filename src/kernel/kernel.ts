@@ -45,6 +45,11 @@ export interface KernelOptions {
 interface HostProvider {
   mkHost: () => HostPort;
   canonical: boolean;
+  locationDir?: string;
+}
+
+function normalizeDirKey(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
 
 export class Kernel {
@@ -60,6 +65,8 @@ export class Kernel {
 
   /** R6：存活实例的 host 工厂（优先 canonical 实例）。 */
   private hostProviders = new Map<string, HostProvider>();
+  /** 会话 → 所在 location 目录（ctx.session 域 per-location——跨实例调用必须路由，实测同 ctx.vcs 限制）。 */
+  private sessionLocation = new Map<string, string>();
   /** (task, session, kind) → 下一 seq（幂等键计数器；从事件日志重建）。 */
   private counters = new Map<string, number>();
   private mailboxTimer: ReturnType<typeof setInterval> | null = null;
@@ -100,8 +107,8 @@ export class Kernel {
 
   // ---------- 实例生命周期（R3/R6） ----------
 
-  attachInstance(instanceId: string, mkHost: () => HostPort, isCanonical: boolean): void {
-    this.hostProviders.set(instanceId, { mkHost, canonical: isCanonical });
+  attachInstance(instanceId: string, mkHost: () => HostPort, isCanonical: boolean, locationDir?: string): void {
+    this.hostProviders.set(instanceId, { mkHost, canonical: isCanonical, locationDir: locationDir ? normalizeDirKey(locationDir) : undefined });
   }
 
   detachInstance(instanceId: string): void {
@@ -115,6 +122,22 @@ export class Kernel {
     const e = new Error('无存活插件实例（HostUnavailable）');
     (e as unknown as { name: string }).name = 'HostUnavailable';
     throw e;
+  }
+
+  /** 会话 location 登记（dispatch 创建会话时调用）。 */
+  recordSessionLocation(sessionId: string, directory: string): void {
+    this.sessionLocation.set(sessionId, normalizeDirKey(directory));
+  }
+
+  /** 按会话所在 location 路由 HostPort（ctx.session 域 per-location，实测）；无匹配实例时回退 canonical。 */
+  hostForSession(sessionId: string): HostPort {
+    const dir = this.sessionLocation.get(sessionId);
+    if (dir) {
+      for (const p of this.hostProviders.values()) {
+        if (p.locationDir === dir) return p.mkHost();
+      }
+    }
+    return this.host();
   }
 
   /** R5：事件只做唤醒——实例事件订阅转发至此；幂等。 */

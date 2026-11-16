@@ -144,7 +144,7 @@ export class Scheduler {
       const t = kernel.projection.tasks.get(taskId);
       if (!t || (t.state !== 'RUNNING' && t.state !== 'TEST_WRITING')) return;
       try {
-        const outcome = await kernel.host().awaitIdle(sessionId, { timeoutMs, signal });
+        const outcome = await kernel.hostForSession(sessionId).awaitIdle(sessionId, { timeoutMs, signal });
         if (signal.aborted) return;
         const cur = kernel.projection.tasks.get(taskId);
         if (!cur || (cur.state !== 'RUNNING' && cur.state !== 'TEST_WRITING')) return;
@@ -167,7 +167,7 @@ export class Scheduler {
           return;
         } else {
           // timeout：getSession 三分支（active 重等/非 active 查日志/仍无→保守无提交空闲）
-          const s = await kernel.host().getSession(sessionId);
+          const s = await kernel.hostForSession(sessionId).getSession(sessionId);
           if (s.active) {
             kernel.appendMarkForTask(cur, 'wait-continued', { sessionId });
             timeoutMs = 5 * 60_000; // 重等短周期（受预算定时器总约束）
@@ -201,7 +201,7 @@ export class Scheduler {
       ? '已完成请 dcae_test_submit 提交；受阻请 dcae_question；未完成请继续。'
       : '已完成请 dcae_submit；受阻请 dcae_question；未完成请继续。';
     try {
-      await this.kernel.host().prompt(sessionId, text, { messageId: `msg_${Date.now().toString(36)}${taskId}`, delivery: 'queue' });
+      await this.kernel.hostForSession(sessionId).prompt(sessionId, text, { messageId: `msg_${Date.now().toString(36)}${taskId}`, delivery: 'queue' });
     } catch (e) {
       this.kernel.log.warn('scheduler', '提醒注入失败（等待器将在下轮重试）', { taskId, error: String(e) });
     }
@@ -217,7 +217,7 @@ export class Scheduler {
         const t = kernel.projection.tasks.get(taskId);
         if (!t || !t.sessionId) return;
         if (t.state !== 'RUNNING' && t.state !== 'TEST_WRITING') return;
-        try { await kernel.host().interrupt(t.sessionId); } catch { /* 已停 */ }
+        try { await kernel.hostForSession(t.sessionId).interrupt(t.sessionId); } catch { /* 已停 */ }
         await collectProvisionalEvidence(kernel, taskId, t.sessionId);
         if (t.state === 'TEST_WRITING') {
           // TEST_WRITING 预算耗尽 → BLOCKED + inbox（1.4 §6.6）
@@ -283,12 +283,12 @@ export class Scheduler {
     while (!signal.aborted && kernel.ready && kernel.isLeader()) {
       const t = kernel.projection.tasks.get(taskId);
       if (!t || t.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
-      const outcome = await kernel.host().awaitIdle(sessionId, { timeoutMs: 10 * 60_000, signal });
+      const outcome = await kernel.hostForSession(sessionId).awaitIdle(sessionId, { timeoutMs: 10 * 60_000, signal });
       if (signal.aborted) return;
       const cur = kernel.projection.tasks.get(taskId);
       if (!cur || cur.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
       if (outcome === 'timeout') {
-        const s = await kernel.host().getSession(sessionId);
+        const s = await kernel.hostForSession(sessionId).getSession(sessionId);
         if (s.active && ++timeoutCycles < 3) continue; // 继续等（3 轮上限，fail-closed）
         timeoutCycles = 0;
       }
@@ -372,7 +372,7 @@ async function collectProvisionalEvidence(kernel: Kernel, taskId: string, sessio
 
 async function latestMarker(kernel: Kernel, sessionId: string): Promise<'succeeded' | 'failed' | 'interrupted' | null> {
   try {
-    const msgs = await kernel.host().sessionMessages(sessionId);
+    const msgs = await kernel.hostForSession(sessionId).sessionMessages(sessionId);
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i]!;
       if (m.type === 'idle' && (m.outcome === 'succeeded' || m.outcome === 'failed' || m.outcome === 'interrupted')) {
