@@ -143,15 +143,16 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
         try {
           await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
         } catch { /* 立即失败/503：落入轮询 */ }
+        clearTimeout(timer); // wait 已返回：2s abort 定时器作废——轮询只受外部 signal 与 deadline 约束
         while (Date.now() < deadline) {
-          if (o.signal.aborted || controller.signal.aborted) return 'timeout';
+          if (o.signal.aborted) return 'timeout';
           try {
             const raw: any = await ctx.session.get({ sessionID: id });
             const outcome = raw?.outcome;
             if (outcome === 'succeeded') return 'idle';
             if (outcome === 'failed') return 'failed';
             if (outcome === 'interrupted') return 'interrupted';
-          } catch { /* 会话被移除等：按 timeout 处理 */ }
+          } catch { /* 会话被移除等：继续轮询至 deadline */ }
           await new Promise((r) => setTimeout(r, 3_000));
         }
         return 'timeout';
