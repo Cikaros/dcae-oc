@@ -65,7 +65,12 @@ export default Plugin.define({
     const kernel = handle.kernel;
     const instanceId = `i_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const isCanonical = toPosix(ctx.location.directory) === canonical;
-    kernel.attachInstance(instanceId, () => createOpenCodeHost({ ctx, httpBase: options.serverUrl }), isCanonical, toPosix(ctx.location.directory));
+    kernel.attachInstance(
+      instanceId,
+      () => createOpenCodeHost({ ctx, httpBase: options.serverUrl, idleSignal: (sid, since) => kernel.idleSince(sid, since) }),
+      isCanonical,
+      toPosix(ctx.location.directory),
+    );
 
     // R1：每实例注册全套（工具目录按 location 生效，任务会话运行在 worktree location）
     try { registerTools(ctx, kernel); probe('registerTools-ok'); } catch (e) { probe('registerTools', e); throw e; }
@@ -97,8 +102,14 @@ export default Plugin.define({
     const unsubscribe = ctx.event.subscribe();
     void (async () => {
       try {
-        for await (const _ev of unsubscribe) {
+        for await (const ev of unsubscribe) {
           kernel.wake(); // 事件只做唤醒；状态推进由有界轮询 + 会话日志重放为权威（R5）
+          // session.idle 事件登记（awaitIdle 的进程内 idle 信号；V2Event 93 项含 session.idle [A]）
+          const e = ev as unknown as { type?: string; properties?: { sessionID?: string; outcome?: string }; data?: { properties?: { sessionID?: string; outcome?: string } } };
+          if (typeof e?.type === 'string' && e.type.endsWith('.idle')) {
+            const d = e.properties ?? e.data?.properties ?? (e as unknown as { sessionID?: string });
+            if (typeof d?.sessionID === 'string') kernel.noteSessionIdle(d.sessionID, d.outcome);
+          }
         }
       } catch {
         // 事件流易失（慢消费者溢出即断 [A]）：唤醒循环由心跳兜底

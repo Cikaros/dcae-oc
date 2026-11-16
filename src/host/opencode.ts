@@ -29,10 +29,13 @@ export interface AdapterCtx {
   ctx: Plugin.Context;
   /** HTTP REST 兜底基址（config.serverUrl / env DCAE_OPENCODE_URL）。 */
   httpBase?: string;
+  /** session.idle 事件信号（Kernel 登记；awaitIdle 进程内权威 idle 信号）。 */
+  idleSignal?: (sessionId: string, sinceMs: number) => string | null;
 }
 
 export function createOpenCodeHost(input: AdapterCtx): HostPort {
   const { ctx } = input;
+  const idleSignal = input.idleSignal;
   const httpBase = normalizeBase(input.httpBase ?? process.env.DCAE_OPENCODE_URL);
   // 会话所在 location（REST 兜底调用必须按会话 location 路由——worktree 会话在 canonical 视角不可见，实测教训）
   const sessionDirs = new Map<string, string>();
@@ -131,43 +134,26 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async awaitIdle(id, o) {
-      // 忠实平台 wait 语义（实测修正）：wait **阻塞到会话 idle**（无请求体，[A]）——
-      // 返回即 idle 到来；对未启动会话会早返回（T-w 竞态）。
-      // 终态区分用 ctx.session.get().outcome（failed/interrupted 有值；正常 idle 为 undefined）。
+      // 轮询版（实测修正：ctx.session.wait 对运行中会话的阻塞实现会堵死事件循环）：
+      // idle 信号 = session.idle 事件登记（kernel.noteSessionIdle，实例事件流原生广播）；
+      // 终态区分 = ctx.session.get().outcome（failed/interrupted 有值，正常 idle undefined）。
       const deadline = Date.now() + o.timeoutMs;
+      const since = Date.now();
       while (Date.now() < deadline) {
         if (o.signal.aborted) return 'timeout';
-        const remain = deadline - Date.now();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), remain);
-        const onOuterAbort = () => controller.abort();
-        o.signal.addEventListener('abort', onOuterAbort, { once: true });
-        const t0 = Date.now();
-        let waitFailed = false;
-        try {
-          await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
-        } catch {
-          waitFailed = true; // 503/未启动早返回/abort
-        } finally {
-          clearTimeout(timer);
-          o.signal.removeEventListener('abort', onOuterAbort);
-        }
-        if (o.signal.aborted) return 'timeout';
-        const waited = Date.now() - t0;
+        // 1. 事件信号（实例事件流）
+        const evOutcome = idleSignal?.(id, since);
+        if (evOutcome === 'idle') return 'idle';
+        if (evOutcome === 'failed') return 'failed';
+        if (evOutcome === 'interrupted') return 'interrupted';
+        // 2. 终态信号（进程内 get）
         try {
           const raw: any = await ctx.session.get({ sessionID: id });
           const outcome = raw?.outcome;
           if (outcome === 'failed') return 'failed';
           if (outcome === 'interrupted') return 'interrupted';
-          if (outcome === 'succeeded') return 'idle';
-        } catch { /* 会话查询失败：继续判定 */ }
-        // wait 立即返回（<3s）或失败且无 outcome：早返回竞态（会话未启动）→ 退避后重 wait
-        if (waited < 3_000 || waitFailed) {
-          await new Promise((r) => setTimeout(r, 5_000));
-          continue;
-        }
-        // wait 阻塞后返回 + outcome undefined：控制型 idle（回合正常结束）→ 'idle'
-        return 'idle';
+        } catch { /* 会话查询失败：继续轮询 */ }
+        await new Promise((r) => setTimeout(r, 5_000));
       }
       return 'timeout';
     },

@@ -67,6 +67,8 @@ export class Kernel {
   private hostProviders = new Map<string, HostProvider>();
   /** 会话 → 所在 location 目录（ctx.session 域 per-location——跨实例调用必须路由，实测同 ctx.vcs 限制）。 */
   private sessionLocation = new Map<string, string>();
+  /** session.idle 事件登记（sessionId → {at, outcome?}；awaitIdle 进程内信号）。 */
+  private recentIdle = new Map<string, { at: number; outcome?: string }>();
   /** (task, session, kind) → 下一 seq（幂等键计数器；从事件日志重建）。 */
   private counters = new Map<string, number>();
   private mailboxTimer: ReturnType<typeof setInterval> | null = null;
@@ -145,6 +147,18 @@ export class Kernel {
     for (const cb of this.wakeCallbacks) {
       try { cb(); } catch { /* 唤醒失败不影响正确性（有界轮询兜底） */ }
     }
+  }
+
+  /** session.idle 事件登记（实例事件循环解析；awaitIdle 的进程内 idle 权威信号）。 */
+  noteSessionIdle(sessionId: string, outcome?: string): void {
+    this.recentIdle.set(sessionId, { at: Date.now(), outcome });
+  }
+
+  /** 查询会话在窗口起始之后的 idle 登记（事件流易失——仅作辅助信号，与轮询并用）。 */
+  idleSince(sessionId: string, sinceMs: number): string | null {
+    const r = this.recentIdle.get(sessionId);
+    if (!r || r.at < sinceMs) return null;
+    return r.outcome ?? 'idle';
   }
 
   onWake(cb: () => void): () => void {
