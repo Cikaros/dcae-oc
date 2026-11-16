@@ -1,49 +1,73 @@
-# dcae-oc — DCAE-OC 内核（OpenCode V2 服务器插件）
+# dcae-oc — DCAE-OC 内核（OpenCode V2 插件）
 
-确定性内核：把已批准的计划变成任务 DAG，在隔离 git worktree 中以最小权限会话运行每个任务；只接受内核产出的证据；受控合并列车；判断性决策进人类收件箱。上游规范：`../DCAE-OC 1.4 Divide & Conquer Agent Engineering on OpenCode V2.md`；工程计划 `../DCAE-OC 项目设计 v1.0.md`；软件架构 `../DCAE-OC 架构设计 v1.0.md`。
+确定性内核：把已批准的计划变成任务 DAG，在隔离 git worktree 中以最小权限会话运行每个任务；只接受内核产出的证据；受控合并列车；判断性决策进人类收件箱。含 `dcae` CLI。
 
-## 安装（目标项目）
+上游规范与设计文档见 `E:\Code\DCAE-OC\`（1.4 规范、项目设计 v1.0、架构设计 v1.0）。
+
+## 安装（OpenCode 官方插件形态）
+
+按官方 Build plugins › Publish/Load：**已发布插件就是一个 npm 包**。三种安装方式：
+
+### A. 发布后安装（标准形态）
 
 ```sh
-# 在目标项目根
-bun x dcae-oc init            # 或本地开发形态：bun run <本仓>/src/cli.ts init <目标项目>
+# 发布（维护者，一次性）
+cd dcae-oc && npm publish
+
+# 用户安装（全局插件缓存，对所有项目生效）
+opencode plugin add dcae-oc
+
+# 或仅在单个项目启用：项目 opencode.json
+{ "plugins": ["dcae-oc"] }
 ```
 
-`dcae init` 写入：`.opencode/agents/dcae-*.md`（四角色智能体）、`opencode.json`（插件引用 + V2 有序权限规则数组；**纯 JSON**——本平台 jsonc 中文注释解析失败，2026-11-16 实测）、`gates.yaml`、AGENTS.md 协议块、目录骨架。
+### B. Git 仓库安装（未发 npm 时）
 
-插件加载要求：opencode.json 的 `plugins` 数组指向本目录（绝对路径）或 npm 包名。目标项目必须是 git 仓库。
+```sh
+opencode plugin add github:Cikaros/dcae-oc
+# 或 opencode.json："plugins": ["github:Cikaros/dcae-oc"]
+```
+
+### C. 本地目录安装（开发态）
+
+```json
+{ "plugins": ["E:/Code/DCAE-OC/plugin"] }
+```
+
+## 初始化目标项目（必须）
+
+安装插件后，在**目标项目**根目录跑一次脚手架（写入四角色智能体、`opencode.json`、`gates.yaml`、AGENTS.md 协议块、目录骨架——插件启动时校验智能体存在，缺失即拒绝加载）：
+
+```sh
+npx dcae-oc init        # 全局/缓存安装形态
+# 或本地开发形态：
+bun E:/Code/DCAE-OC/plugin/src/cli.ts init . --plugin "E:/Code/DCAE-OC/plugin" --runner bun
+```
+
+然后 `git add -A && git commit`（worktree 分发依赖这些文件入库），启动 OpenCode 即生效。
+
+把 `gates.yaml` 改成项目实际的测试/typecheck 命令（**人类所有**；任务 `checks.run` 只能引用这里的命令 id）。
 
 ## CLI
 
 ```sh
-dcae validate    # 任务/门禁静态校验（引用检查、保护路径重叠、DAG 无环）
-dcae status      # 任务状态投影（离线读事件日志）
-dcae inbox list  # 收件箱
-dcae decide INBOX-000001 --option approve --note "..."   # 决策（经邮箱，≤5s 生效）
-dcae retry <TASK> / dcae revalidate <TASK> / dcae promote [--branch main]
-dcae approve-spec <SPEC-ID>
-dcae verify      # 无状态只读核查（CI 可用）
+dcae validate                 # 任务/门禁静态校验
+dcae status                   # 任务状态投影
+dcae inbox list / decide INBOX-xxxx --option y / sync
+dcae retry <TASK> / revalidate <TASK> / promote [--branch main] / approve-spec <ID>
+dcae verify                   # 无状态只读核查（CI）
 ```
 
 ## 开发
 
 ```sh
-bun install
-bun run typecheck        # tsc --noEmit
-bun test                 # 单元测试（80 用例，无 OpenCode 依赖）
-bun test/contract/run.ts [--case=T-3 ...] [--with-model] [--keep]
-                         # M0 契约测试：起真实 opencode serve 实跑十四项
+bun install && bun run typecheck && bun test    # 80 单测
+bun test/contract/run.ts [--with-model]          # M0 契约测试（起真实 opencode serve 实跑十四项）
 ```
-
-契约测试结果存档于 `test/contract/results/`（按日期；平台升级后重跑——1.4 §3 第 8 项：通配符语义是活跃演进面）。
 
 ## 实测快照（2026-11-16，OpenCode v2.3.0）
 
-- 十四项契约：12 PASS / 0 FAIL / 2 INCONCLUSIVE（T-9 压缩 epoch 半、T-12 idle outcome 半需真实 LLM 会话，`--with-model` 执行）。
-- 平台行为观察（详见 results md）：服务器对会话创建未知字段宽松接受（OpenAPI `additionalProperties:false` 是契约层约束）；插件装载由 location 首个 API 请求触发；RPC 输出 schema 必须用 JSON Schema（zod 无法被响应编码）。
-- 插件未加载时排查：设 `DCAE_CONTRACT=1` 后查看目标项目 `.dcae/setup-probe.log`。
-
-## 里程碑状态
-
-- M0 契约测试 ✅（2026-11-16，v2.3.0 快照）
-- M1–M5 内核全组件 ✅（源码 + 80 单测；LLM 端到端冒烟待用户择时执行）
+- M0 契约十四项：12 PASS / 0 FAIL / 2 INCONCLUSIVE（需真实 LLM，`--with-model`）；结果存档 `test/contract/results/`。
+- **安装后的包已按官方要求实测**（"test the installed package, not only a workspace-linked copy"）：npm pack → 独立安装 → OpenCode 加载 → setup 全阶段 + RPC 自调用 + 内核 leader 初始化全部通过。
+- 平台行为注记：目标项目配置用**纯 JSON**（本平台解析带中文注释的 jsonc 失败）；插件装载由 location 首个 API 请求触发；RPC output schema 须用 JSON Schema（zod 无法被编码）。详见项目设计 D-6/D-7。
+- 插件未装载排查：设 `DCAE_CONTRACT=1` 启动，查目标项目 `.dcae/setup-probe.log`。

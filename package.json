@@ -1,30 +1,50 @@
 {
   "name": "dcae-oc",
   "version": "0.1.0",
-  "description": "DCAE-OC deterministic kernel as an OpenCode V2 server plugin (1.4 spec) + dcae CLI",
-  "type": "module",
+  "description": "DCAE-OC deterministic kernel as an OpenCode V2 server plugin: task DAG in isolated worktrees, least-privilege sessions, evidence-gated merges, human inbox. Includes the `dcae` CLI.",
   "license": "MIT",
+  "type": "module",
   "bin": {
     "dcae": "./src/cli.ts"
   },
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc/index.ts"
+  },
+  "files": [
+    "src",
+    "agents",
+    "templates",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "agent",
+    "orchestration",
+    "deterministic-kernel",
+    "worktree",
+    "code-review"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Cikaros/dcae-oc.git"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test test/unit",
     "contract": "bun test/contract/run.ts"
   },
-  "peerDependencies": {
-    "@opencode/plugin": ">=2.3.0"
-  },
   "dependencies": {
+    "@opencode/plugin": ">=2.3.0",
     "yaml": "^2.6.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@opencode/plugin": "2.3.0",
     "typescript": "^5.7.0",
     "@types/bun": "^1.2.0",
     "@types/node": "^22.0.0"
