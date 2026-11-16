@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { SchemaVersion } from './common.ts';
 import { parse as yamlParse } from 'yaml';
+import { stripBom } from '../util/text.ts';
 
 export const SpecTypeSchema = z.enum(['requirement', 'design', 'invariant']);
 export const SpecStatusSchema = z.enum(['draft', 'approved', 'superseded']);
@@ -27,7 +28,7 @@ export function parseSpecFile(text: string): { front: SpecFrontMatter; body: str
   if (!m) return { errors: ['缺少 front-matter'] };
   let raw: unknown;
   try {
-    raw = yamlParse(m[1]!);
+    raw = yamlParse(stripBom(m[1]!));
   } catch (e) {
     return { errors: [`front-matter YAML 解析失败: ${String(e)}`] };
   }

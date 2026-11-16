@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { SchemaVersion } from './common.ts';
 import { parse as yamlParse } from 'yaml';
+import { stripBom } from '../util/text.ts';
 
 export const InboxKindSchema = z.enum(['spec-approval', 'question', 'dcp', 'escalation', 'revalidation', 'test-exhausted']);
 export type InboxKind = z.infer<typeof InboxKindSchema>;
@@ -33,7 +34,7 @@ export type InboxItem = z.infer<typeof InboxItemSchema>;
 export function parseInboxItem(text: string): { ok: true; item: InboxItem } | { ok: false; errors: string[] } {
   let raw: unknown;
   try {
-    raw = yamlParse(text);
+    raw = yamlParse(stripBom(text));
   } catch (e) {
     return { ok: false, errors: [`YAML 解析失败: ${String(e)}`] };
   }

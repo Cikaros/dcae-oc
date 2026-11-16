@@ -80,14 +80,17 @@ export function loadInboxItem(kernel: Kernel, id: string): InboxItem | null {
   return r.success ? r.data : null;
 }
 
-/** 决策应用（decision 邮箱的消费端效果；幂等键 = inbox 项 ID，由 kernel 去重）。 */
+/** 决策应用（decision 邮箱的消费端效果；幂等键由 kernel 去重）。 */
 export async function applyDecision(
   kernel: Kernel,
   inboxId: string,
   payload: Record<string, unknown>,
 ): Promise<{ ok: boolean; detail?: string }> {
   const item = loadInboxItem(kernel, inboxId);
-  if (!item) return { ok: false, detail: `inbox 项不存在：${inboxId}` };
+  if (!item) {
+    // action 类决策（CLI plan-approve/promote/retry/revalidate/approve-spec 经邮箱，无 inbox 项）
+    return applyActionDecision(kernel, inboxId, payload);
+  }
   if (item.status === 'decided') return { ok: true, detail: '重复决策（已决定）' };
   const option = String(payload.option ?? '');
   const note = payload.note ? String(payload.note) : undefined;
@@ -122,8 +125,57 @@ export async function applyDecision(
     else if (option === 'cancel') kernel.appendTransition(t, 'cancel', { inboxId });
   }
 
-  kernel.appendMarkForTask(kernel.projection.task(item.ref.task ?? '*'), 'decision-applied' as never, { inboxId, option });
   return { ok: true, detail: `决策已应用：${item.id} -> ${option}` };
+}
+
+/** action 类决策（无 inbox 项；CLI 决策命令集的消费端）。 */
+async function applyActionDecision(
+  kernel: Kernel,
+  inboxId: string,
+  payload: Record<string, unknown>,
+): Promise<{ ok: boolean; detail?: string }> {
+  const by = String(payload.by ?? 'human');
+  switch (payload.action) {
+    case 'plan-approve': {
+      // 人工批准计划 → 追加 plan-approved 标记（PENDING 起点；重复批准=重复无害标记）
+      const tasks = (payload.tasks as string[]) ?? [];
+      for (const id of tasks) {
+        kernel.appendMarkForTask(kernel.projection.task(id), 'plan-approved', { inboxId, by });
+      }
+      return { ok: true, detail: `计划已批准：${tasks.join(', ') || '（无任务）'}` };
+    }
+    case 'approve-spec': {
+      const spec = String(payload.spec ?? '');
+      const ok = approveSpec(kernel, spec, by);
+      return ok
+        ? { ok: true, detail: `规范已批准：${spec}` }
+        : { ok: false, detail: `规范文件不存在：${spec}` };
+    }
+    case 'retry': {
+      const id = String(payload.task ?? '');
+      const t = kernel.projection.task(id);
+      const g = kernel.guard(t, 'retry');
+      if (!g.ok) return { ok: false, detail: `retry 被拒：${g.detail}` };
+      const ev = kernel.appendTransition(t, 'retry', { inboxId, by });
+      return ev ? { ok: true, detail: `${id} FAILED→READY（新 attempt）` } : { ok: false, detail: '事件追加失败（租约丢失）' };
+    }
+    case 'revalidate': {
+      const id = String(payload.task ?? '');
+      const t = kernel.projection.task(id);
+      const g = kernel.guard(t, 'revalidate');
+      if (!g.ok) return { ok: false, detail: `revalidate 被拒：${g.detail}` };
+      const ev = kernel.appendTransition(t, 'revalidate', { inboxId, by });
+      return ev ? { ok: true, detail: `${id} INVALIDATED→TEST_WRITING` } : { ok: false, detail: '事件追加失败（租约丢失）' };
+    }
+    case 'promote': {
+      const branch = String(payload.branch ?? 'main');
+      const { promote } = await import('../merge/train.ts');
+      const r = await promote(kernel, branch);
+      return r.ok ? { ok: true, detail: `promote 完成（${branch}）` } : { ok: false, detail: `promote 失败：${r.detail}` };
+    }
+    default:
+      return { ok: false, detail: `未知决策 action：${String(payload.action ?? '（空）')}` };
+  }
 }
 
 /** dcae approve-spec（仅人类通道调用；1.4 §6.1 只有人类决策能把规范变为 approved）。 */

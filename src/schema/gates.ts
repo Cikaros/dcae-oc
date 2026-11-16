@@ -38,7 +38,7 @@ export type GatesConfig = z.infer<typeof GatesSchema>;
 export function parseGates(text: string): { ok: true; gates: GatesConfig } | { ok: false; errors: string[] } {
   let raw: unknown;
   try {
-    raw = yamlParse(text);
+    raw = yamlParse(stripBom(text));
   } catch (e) {
     return { ok: false, errors: [`YAML 解析失败: ${String(e)}`] };
   }
@@ -48,6 +48,7 @@ export function parseGates(text: string): { ok: true; gates: GatesConfig } | { o
 }
 
 import { parse as yamlParse } from 'yaml';
+import { stripBom } from '../util/text.ts';
 
 /** 展开管线步骤为命令引用列表。 */
 export function flattenPipeline(steps: z.infer<typeof PipelineStepSchema>[]): { cmd: string; args: string[] }[] {

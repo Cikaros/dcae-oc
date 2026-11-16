@@ -28,6 +28,7 @@ const HELP = `dcae — DCAE-OC 命令面
   dcae revalidate <TASK> [dir]                          INVALIDATED→TEST_WRITING
   dcae promote [dir] [--branch main]                    integration→主分支（人工）
   dcae approve-spec <SPEC-ID> [dir]                     写 status: approved
+  dcae plan-approve <TASK> [<TASK>...] [dir]            批准计划（任务进入 PENDING 起点）
   dcae clean [dir]                                      孤儿 worktree 清理（dry-run 先行）`;
 
 function arg(args: string[], name: string): string | undefined {
@@ -119,6 +120,16 @@ async function main(): Promise<number> {
       if (!spec) return usage('approve-spec <SPEC-ID>');
       enqueue(dcaeDir, 'decision', `approve-spec:${spec}:${Date.now()}`, { action: 'approve-spec', spec, by: process.env.USERNAME ?? 'human' });
       console.log(`approve-spec 已入队：${spec}`);
+      return 0;
+    }
+    case 'plan-approve': {
+      // 人工批准计划：任务进入 PENDING 起点（幂等；leader 心跳 ≤5s 消费）
+      // 任务 ID = 非旗标位置参数中除去目录（detectRoot 结果）的部分
+      const rootPath = resolve(root);
+      const taskList = argv.slice(1).filter((a) => !a.startsWith('-') && resolve(a) !== rootPath);
+      if (taskList.length === 0) return usage('plan-approve <TASK> [<TASK>...] [dir]');
+      enqueue(dcaeDir, 'decision', `plan-approve:${taskList.join('+')}:${Date.now()}`, { action: 'plan-approve', tasks: taskList, by: process.env.USERNAME ?? 'human' });
+      console.log(`plan-approve 已入队：${taskList.join(', ')}`);
       return 0;
     }
     case 'clean': {

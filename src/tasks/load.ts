@@ -4,13 +4,14 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { TaskSchema, type TaskDef } from '../schema/task.ts';
 import { parse as yamlParse } from 'yaml';
+import { stripBom } from '../util/text.ts';
 
 export function loadTaskDef(file: string): TaskDef | null {
   if (!existsSync(file)) return null;
   try {
     const text = readFileSync(file, 'utf8');
     const stripped = text.replace(/^---\s*\r?\n/, '').replace(/\r?\n---\s*$/, '');
-    const raw = yamlParse(stripped);
+    const raw = yamlParse(stripBom(stripped));
     const r = TaskSchema.safeParse(raw);
     return r.success ? r.data : null;
   } catch {
