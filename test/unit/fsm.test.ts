@@ -151,7 +151,7 @@ describe('TaskFSM（1.4 §7.1 迁移表 25 行逐行）', () => {
   });
 
   test('决策恢复映射（1.4 §7.1 BLOCKED 原因与恢复表）', () => {
-    expect(decisionRestore('escalation', 'revalidate', 'BLOCKED')).toBe('TEST_WRITING');
+    expect(decisionRestore('escalation', 'revalidate', 'BLOCKED')).toBe('REVIEW'); // 重跑审查（非盲任务）
     expect(decisionRestore('escalation', 'proceed', 'BLOCKED')).toBe('VERIFYING');
     expect(decisionRestore('question', 'cancel', 'BLOCKED')).toBeNull();
     expect(decisionRestore('rebase-conflict', 'new-baseline', 'BLOCKED')).toBe('READY');
