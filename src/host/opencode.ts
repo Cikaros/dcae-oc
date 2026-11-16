@@ -132,8 +132,8 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
 
     async awaitIdle(id, o) {
       // 平台 wait 无请求体（[A]）且对已 idle 会话立即失败——只作唤醒加速（2s 短等待）。
-      // idle 判定权威 = messages 端点的持久 idle 消息（Session.Message.Idle 带 outcome [A]；
-      // 实测 sessionLog SSE 不回放历史条目，不可作判定源）。
+      // idle/终态判定权威 = ctx.session.get().outcome（进程内 [A] Session.Info；实测 messages/
+      // sessionLog 的 REST/回放在无凭据进程内不可达——M0 后备切换，1.4 §3 使用规则）。
       const deadline = Date.now() + o.timeoutMs;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 2_000);
@@ -145,10 +145,13 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
         } catch { /* 立即失败/503：落入轮询 */ }
         while (Date.now() < deadline) {
           if (o.signal.aborted || controller.signal.aborted) return 'timeout';
-          const marker = await latestIdleMarker(this, id);
-          if (marker === 'succeeded') return 'idle';
-          if (marker === 'failed') return 'failed';
-          if (marker === 'interrupted') return 'interrupted';
+          try {
+            const raw: any = await ctx.session.get({ sessionID: id });
+            const outcome = raw?.outcome;
+            if (outcome === 'succeeded') return 'idle';
+            if (outcome === 'failed') return 'failed';
+            if (outcome === 'interrupted') return 'interrupted';
+          } catch { /* 会话被移除等：按 timeout 处理 */ }
           await new Promise((r) => setTimeout(r, 3_000));
         }
         return 'timeout';
@@ -211,11 +214,16 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
       }
       const info = mapSessionInfo(raw);
       let active = false;
-      try {
-        const act = await httpJson<Record<string, any>>('GET', '/api/session/active');
-        active = Object.prototype.hasOwnProperty.call(act ?? {}, id);
-      } catch {
-        active = false; // 无 HTTP 时保守报非活跃（drain 快照语义："Sessions absent from the result are inactive"）
+      if (httpBase) {
+        try {
+          const act = await httpJson<Record<string, any>>('GET', '/api/session/active');
+          active = Object.prototype.hasOwnProperty.call(act ?? {}, id);
+        } catch {
+          active = info.outcome === undefined; // REST 不可用：未终态近似为活跃（保守）
+        }
+      } else {
+        // 无 REST（进程内常态）：Session.Info 无终态 outcome ⇒ 视为活跃（保守近似，实测驱动）
+        active = info.outcome === undefined;
       }
       return {
         exists: true,
@@ -330,20 +338,9 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
   }
 }
 
-/** 消息尾部最近一个 idle 标记的 outcome（无标记 → null；权威源 = messages 端点）。 */
-async function latestIdleMarker(host: HostPort, id: string): Promise<'succeeded' | 'failed' | 'interrupted' | null> {
-  try {
-    const msgs = await host.sessionMessages(id);
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i]!;
-      if (m.type === 'idle' && (m.outcome === 'succeeded' || m.outcome === 'failed' || m.outcome === 'interrupted')) {
-        return m.outcome as 'succeeded' | 'failed' | 'interrupted';
-      }
-      // 非 idle 的用户消息在 idle 之后 = 有新回合，旧标记失效
-      if (m.type === 'user') return null;
-    }
-  } catch {
-    return null;
-  }
+/** 消息尾部最近一个 idle 标记的 outcome —— 已弃用：idle/终态判定改走 ctx.session.get().outcome
+ * （awaitIdle 内联实现）；sessionMessages 保留给 HostPort 接口完备性（有 httpBase 的部署可用）。 */
+async function latestIdleMarker(_host: HostPort, _id: string): Promise<'succeeded' | 'failed' | 'interrupted' | null> {
   return null;
 }
+void latestIdleMarker;

@@ -36,6 +36,10 @@ export default Plugin.define({
       } catch { /* 探针失败不影响主流程 */ }
     };
     probe('setup-enter');
+    if (contractMode) {
+      // 运行时方法集侦察：SessionDomain 只是 Pick 子集，运行时对象可能携带更多域（messages 等）
+      probe('session-keys: ' + Object.getOwnPropertyNames(Object.getPrototypeOf(ctx.session) ?? {}).concat(Object.keys(ctx.session ?? {})).join(','));
+    }
 
     // fail closed：角色智能体必须已由 dcae init 落地（1.4 §2 #1b）
     const agentsDir = join(canonical, '.opencode', 'agents');

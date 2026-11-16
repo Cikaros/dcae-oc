@@ -292,51 +292,33 @@ export class Scheduler {
         if (s.active && ++timeoutCycles < 3) continue; // 继续等（3 轮上限，fail-closed）
         timeoutCycles = 0;
       }
-      // 会话已终（或超时上限）：解析 verdict
-      let verdict: 'approve' | 'request_changes' | 'escalate' | null = null;
-      let reviewText = '';
-      try {
-        const msgs = await kernel.host().sessionMessages(sessionId);
-        const lastA = [...msgs].reverse().find((m) => m.type === 'assistant');
-        reviewText = lastA?.text ?? '';
-        verdict = parseVerdict(reviewText);
-      } catch (e) {
-        kernel.log.warn('scheduler', 'reviewer 消息读取失败', { taskId, error: String(e) });
-      }
       const t2 = kernel.projection.tasks.get(taskId);
       if (!t2 || t2.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
-      if (verdict === 'approve') {
+      if (outcome === 'idle') {
+        // verdict 判定（进程内后备，1.4 §3 证伪切换）：
+        // reviewer 正常结束（outcome=succeeded）且审查期间未提交任何 question/dcp
+        // （那些工具走 ingest，会先把任务拉去 BLOCKED——走到这里即证明零 findings 提交）
+        // → 结构性 approve；escalate 语义由 dcae_question/dcp 天然承接（BLOCKED + inbox）。
         const { freezeTask } = await import('../merge/train.ts');
         const sha = t2.worktree ? freezeTask(kernel, taskId, t2.worktree) : null;
-        kernel.appendTransition(t2, 'review-pass', { sessionId, frozenRefSha: sha, verdict });
+        kernel.appendTransition(t2, 'review-pass', { sessionId, frozenRefSha: sha, verdict: 'approve', via: 'structural-zero-findings' });
+        kernel.log.info('scheduler', 'reviewer 正常结束且零 findings 提交 → approve', { taskId, sessionId });
         this.reviewWaiters.delete(taskId);
         return;
       }
-      if (verdict === 'request_changes' && kernel.guard(t2, 'review-rework').ok) {
-        kernel.appendTransition(t2, 'review-rework', { sessionId });
-        t2.reviewSessionId = null;
-        this.reviewWaiters.delete(taskId);
-        // 通知 dev 会话返工（findings 摘要随 prompt）
-        if (t2.sessionId) {
-          try {
-            await kernel.host().prompt(t2.sessionId, `审查要求返工（verdict: request_changes）：\n${reviewText.slice(0, 1500)}\n修复后立即 dcae_submit。`, { messageId: `msg_${Date.now().toString(36)}rw`, delivery: 'queue' });
-          } catch { /* dev 会话由等待器/提醒兜底 */ }
-        }
-        return;
-      }
-      // escalate / unparsable / rework 轮次耗尽 → BLOCKED + inbox（fail-closed）
+      // timeout(3 轮上限)/failed/interrupted → escalate（fail-closed）
       const { createInboxItem } = await import('../inbox/inbox.ts');
       createInboxItem(kernel, {
         kind: 'escalation',
         task: taskId,
-        question: `审查未通过自动闭环（verdict=${verdict ?? 'unparsable'}）：${(reviewText || '（无审查文本）').slice(0, 300)}`,
+        question: `审查会话异常终结（outcome=${outcome}）：无法自动判定 verdict，请人工审查后决定。`,
         options: [
           { id: 'proceed', label: '人工判读后继续（保留证据）' },
           { id: 'revalidate', label: '重跑审查' },
           { id: 'cancel', label: '取消任务' },
         ],
       });
-      kernel.appendTransition(t2, 'review-escalated', { sessionId, verdict: verdict ?? 'unparsable' });
+      kernel.appendTransition(t2, 'review-escalated', { sessionId, outcome });
       this.reviewWaiters.delete(taskId);
       return;
     }
@@ -404,10 +386,4 @@ async function latestMarker(kernel: Kernel, sessionId: string): Promise<'succeed
 
 function depsMerged(kernel: Kernel, def: import('../schema/task.ts').TaskDef): boolean {
   return def.deps.every((d) => kernel.projection.tasks.get(d)?.state === 'MERGED');
-}
-
-/** 从 reviewer 最后一条 assistant 文本解析 verdict（1.4 §7.4 verdict 枚举）。 */
-function parseVerdict(text: string): 'approve' | 'request_changes' | 'escalate' | null {
-  const m = /verdict:\s*(approve|request_changes|escalate)/i.exec(text ?? '');
-  return m ? (m[1]!.toLowerCase() as 'approve' | 'request_changes' | 'escalate') : null;
 }
