@@ -184,13 +184,17 @@ export async function runGatePipeline(kernel: Kernel, taskId: string, attempt: n
     }
   }
 
-  // 范围检查与保护哈希（1.4 §7.1 VERIFYING→REVIEW 守卫）
+  // 范围检查与保护哈希（1.4 §7.1 VERIFYING→REVIEW 守卫）。
+  // lockfile 排除：依赖锁文件是 install 白名单命令的必然副产物（dev 无法控制其生成），
+  // 强制入范围会让任何含 install 的任务不可能通过——按"内核产出命令的副产品"豁免。
+  const LOCKFILES = new Set(['bun.lock', 'bun.lockb', 'package-lock.json', 'pnpm-lock.yaml', 'npm-shrinkwrap.json', 'yarn.lock']);
   const forkSha = getForkSha(kernel, taskId);
   if (forkSha && headSha) {
     const { headChangedFiles } = await import('../util/git.ts');
     const changed = headChangedFiles(kernel.opts.canonical, forkSha, headSha);
     for (const f of changed) {
       const n = normalizeForMatch(f);
+      if (LOCKFILES.has(n.split('/').pop() ?? n)) continue;
       if (def.scope.write.some((g) => dcaeGlobMatch(g, n))) continue;
       outcome.scopeViolations.push(n);
     }
@@ -209,11 +213,20 @@ export async function runGatePipeline(kernel: Kernel, taskId: string, attempt: n
   const signatureNew = !t.gateFailSignatures.includes(outcome.signature ?? '');
   const g = kernel.guard(t, 'gate-fail', { kind: 'submit', task: taskId, session: t.sessionId ?? '', payload: { signature: outcome.signature ?? '' } } as never);
   if (g.ok && signatureNew && t.attempt < (def.budget.attempts ?? 3) - 0) {
-    kernel.appendTransition(t, 'gate-fail', { signature: outcome.signature, failedChecks: failed, evidenceIds: outcome.evidenceIds });
-    // 回 RUNNING：通知会话（注入失败签名提示，不消耗 attempt）
+    kernel.appendTransition(t, 'gate-fail', { signature: outcome.signature, failedChecks: failed, scopeViolations: outcome.scopeViolations, evidenceIds: outcome.evidenceIds });
+    // 回 RUNNING：注入失败详情（dev 必须知道修什么——通用提醒不含范围违规信息，实测教训）
+    if (t.sessionId) {
+      const detail = [
+        failed.length > 0 ? `门禁失败：${failed.join('；')}` : '',
+        outcome.scopeViolations.length > 0 ? `范围外写入：${outcome.scopeViolations.join(', ')}（只可写 ${def.scope.write.join(', ')}）` : '',
+      ].filter(Boolean).join('\n');
+      try {
+        await kernel.hostForSession(t.sessionId).prompt(t.sessionId, `门禁未通过（不消耗 attempt）：\n${detail}\n修正后重新 dcae_submit。`, { messageId: `msg_${Date.now().toString(36)}gf`, delivery: 'queue' });
+      } catch { /* 会话由等待器/提醒兜底 */ }
+    }
     return outcome;
   }
-  kernel.appendTransition(t, 'gate-exhausted', { signature: outcome.signature, failedChecks: failed, evidenceIds: outcome.evidenceIds });
+  kernel.appendTransition(t, 'gate-exhausted', { signature: outcome.signature, failedChecks: failed, scopeViolations: outcome.scopeViolations, evidenceIds: outcome.evidenceIds });
   return outcome;
 }
 
