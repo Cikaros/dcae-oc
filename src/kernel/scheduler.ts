@@ -390,10 +390,13 @@ async function collectProvisionalEvidence(kernel: Kernel, taskId: string, sessio
 
 async function latestMarker(kernel: Kernel, sessionId: string): Promise<'succeeded' | 'failed' | 'interrupted' | null> {
   try {
-    const tail = await kernel.host().sessionLogTail(sessionId, 100);
-    for (let i = tail.length - 1; i >= 0; i--) {
-      const d = (tail[i]!.data ?? {}) as any;
-      if (d.outcome === 'succeeded' || d.outcome === 'failed' || d.outcome === 'interrupted') return d.outcome;
+    const msgs = await kernel.host().sessionMessages(sessionId);
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]!;
+      if (m.type === 'idle' && (m.outcome === 'succeeded' || m.outcome === 'failed' || m.outcome === 'interrupted')) {
+        return m.outcome as 'succeeded' | 'failed' | 'interrupted';
+      }
+      if (m.type === 'user') return null;
     }
   } catch { return null; }
   return null;

@@ -57,12 +57,16 @@ export interface SavedApproval {
   [k: string]: unknown;
 }
 
-/** 会话消息摘要（审查 verdict 解析用）。 */
+/** 会话消息摘要（审查 verdict 解析、idle 检测、读审计的权威来源——实测 sessionLog SSE 不回放历史）。 */
 export interface SessionMessageBrief {
   type: string;
   finish?: string;
+  /** idle 消息的 outcome（succeeded|failed|interrupted）。 */
+  outcome?: string;
   error?: { type?: string; message?: string };
   text?: string;
+  /** 工具调用部件（读审计用）。 */
+  tools?: { name: string; input?: unknown }[];
 }
 
 export class HostUnavailable extends Error {

@@ -131,18 +131,18 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async awaitIdle(id, o) {
-      // 平台 wait 无请求体（[A]：204/503）且对已 idle 会话可能立即失败——它只作"唤醒加速"，
-      // 不作正确性依赖（R5）。超时语义：在剩余时间内轮询会话日志尾部 Idle 标记（outcome），
-      // 到 deadline 仍无标记 → 'timeout'（§7.2：标记与 admission 的先后核对在内核层）。
+      // 平台 wait 无请求体（[A]）且对已 idle 会话立即失败——只作唤醒加速（2s 短等待）。
+      // idle 判定权威 = messages 端点的持久 idle 消息（Session.Message.Idle 带 outcome [A]；
+      // 实测 sessionLog SSE 不回放历史条目，不可作判定源）。
       const deadline = Date.now() + o.timeoutMs;
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), o.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), 2_000);
       const onOuterAbort = () => controller.abort();
       o.signal.addEventListener('abort', onOuterAbort, { once: true });
       try {
         try {
           await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
-        } catch { /* 503/早返回竞态（T-w）：落入轮询路径 */ }
+        } catch { /* 立即失败/503：落入轮询 */ }
         while (Date.now() < deadline) {
           if (o.signal.aborted || controller.signal.aborted) return 'timeout';
           const marker = await latestIdleMarker(this, id);
@@ -184,14 +184,22 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     async sessionMessages(id) {
       const out = await httpJson<any>('GET', `/api/session/${encodeURIComponent(id)}/message?limit=200${locationQuery(id)}`);
       const arr = Array.isArray(out) ? out : ((out?.data as any[]) ?? []);
-      return (arr ?? []).map((m: any) => ({
-        type: String(m?.type ?? ''),
-        finish: m?.finish,
-        error: m?.error ? { type: m.error.type, message: m.error.message } : undefined,
-        text: Array.isArray(m?.parts)
-          ? m.parts.filter((p: any) => p?.type === 'text').map((p: any) => String(p.text ?? '')).join('\n')
-          : undefined,
-      }));
+      return (arr ?? []).map((m: any) => {
+        // 实测（2026-11-17）：REST 消息的部件字段是 content（含 reasoning/text/tool），非 parts
+        const content: any[] = Array.isArray(m?.content) ? m.content : (Array.isArray(m?.parts) ? m.parts : []);
+        const text = content.filter((p: any) => p?.type === 'text').map((p: any) => String(p.text ?? '')).join('\n');
+        const tools = content
+          .filter((p: any) => p?.type === 'tool')
+          .map((p: any) => ({ name: String(p.tool ?? p.name ?? ''), input: p.input ?? p.state?.input }));
+        return {
+          type: String(m?.type ?? ''),
+          finish: m?.finish,
+          outcome: m?.outcome,
+          error: m?.error ? { type: m.error.type, message: m.error.message } : undefined,
+          text: text.length > 0 ? text : undefined,
+          tools: tools.length > 0 ? tools : undefined,
+        };
+      });
     },
 
     async getSession(id) {
@@ -322,17 +330,17 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
   }
 }
 
-/** 日志尾部最近一个 Idle 标记的 outcome（无标记 → null）。 */
+/** 消息尾部最近一个 idle 标记的 outcome（无标记 → null；权威源 = messages 端点）。 */
 async function latestIdleMarker(host: HostPort, id: string): Promise<'succeeded' | 'failed' | 'interrupted' | null> {
   try {
-    const tail = await host.sessionLogTail(id, 100);
-    for (let i = tail.length - 1; i >= 0; i--) {
-      const it = tail[i]!;
-      const d = (it.data ?? {}) as any;
-      const type = String(it.type ?? d.type ?? '');
-      if (type.includes('idle') || d.outcome !== undefined && type !== '') {
-        if (d.outcome === 'succeeded' || d.outcome === 'failed' || d.outcome === 'interrupted') return d.outcome;
+    const msgs = await host.sessionMessages(id);
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]!;
+      if (m.type === 'idle' && (m.outcome === 'succeeded' || m.outcome === 'failed' || m.outcome === 'interrupted')) {
+        return m.outcome as 'succeeded' | 'failed' | 'interrupted';
       }
+      // 非 idle 的用户消息在 idle 之后 = 有新回合，旧标记失效
+      if (m.type === 'user') return null;
     }
   } catch {
     return null;

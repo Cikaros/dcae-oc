@@ -68,45 +68,46 @@ export interface AuditResult {
 }
 
 /**
- * 读越界审计（架构设计 §3.8 读审计落点）：重放 tester 会话日志，审计 read/glob/grep/shell
- * 工具调用资源，触达 scratch 之外路径或 git 对象引用（refs/dcae、对象库）即判读越界。
+ * 读越界审计（架构设计 §3.8 读审计落点）：重放 tester 会话的**消息端点**（实测权威源——
+ * sessionLog SSE 不回放历史），审计 read/glob/grep/shell 工具调用的输入资源，
+ * 触达 scratch 之外路径或 git 对象引用（refs/dcae、对象库）即判读越界。
  */
 export async function auditTesterReads(kernel: Kernel, taskId: string, scratch: string): Promise<AuditResult> {
   const t = kernel.projection.task(taskId);
   if (!t.sessionId) return { clean: true, violations: [] };
   const violations: string[] = [];
   const scratchN = normalizeForMatch(scratch);
-  const canonicalN = normalizeForMatch(kernel.opts.canonical);
-  const GIT_OBJ_PATTERNS = ['refs/dcae', 'objects', 'git show', 'git cat-file', 'git log'];
+  const GIT_OBJ_PATTERNS = ['refs/dcae', 'git show', 'git cat-file', 'git log'];
 
   try {
-    for await (const item of kernel.host().sessionLog(t.sessionId, 0)) {
-      const d = (item.data ?? {}) as any;
-      const type = String(item.type ?? d.type ?? '');
-      const tool = String(d.tool ?? d.name ?? '');
-      if (!/read|glob|grep|shell/i.test(type + tool)) continue;
-      const resource = String(d.resource ?? d.path ?? d.pattern ?? d.command ?? d.input ?? '');
-      if (!resource) continue;
-      const rn = normalizeForMatch(resource);
-      // 路径类：scratch 之外的绝对/相对路径触达
-      if (/^([A-Za-z]:)?\//.test(rn)) {
-        if (!rn.startsWith(scratchN)) violations.push(rn);
-      } else if (rn.startsWith('..')) {
-        violations.push(rn);
-      } else if (rn.startsWith(canonicalN.replace(/.*\/projects\/[^/]+\//, ''))) {
-        violations.push(rn);
-      }
-      // git 对象引用类
-      for (const g of GIT_OBJ_PATTERNS) {
-        if (rn.includes(g)) {
-          violations.push(rn);
-          break;
+    const msgs = await kernel.host().sessionMessages(t.sessionId);
+    for (const m of msgs) {
+      for (const tool of m.tools ?? []) {
+        if (!/read|glob|grep|shell|list/i.test(tool.name)) continue;
+        const resource = normalizeForMatch(
+          typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input ?? ''),
+        );
+        if (!resource || resource === '{}' || resource === '""') continue;
+        // 路径类：scratch 之外的绝对路径触达（消息里绝对路径为 Windows 形态，归一化后比对）
+        const absMatches = resource.match(/([A-Za-z]:\/[^\s"',\\]+|\/[A-Za-z0-9_./-]{4,})/g) ?? [];
+        for (const abs of absMatches) {
+          const n = normalizeForMatch(abs);
+          if (!n.startsWith(scratchN)) violations.push(`${tool.name}: ${n}`);
+        }
+        // 相对遍历
+        if (/\.\./.test(resource)) violations.push(`${tool.name}: traversal ${resource.slice(0, 120)}`);
+        // git 对象引用类
+        for (const g of GIT_OBJ_PATTERNS) {
+          if (resource.includes(g)) {
+            violations.push(`${tool.name}: git-obj ${g}`);
+            break;
+          }
         }
       }
     }
   } catch (e) {
-    // 日志不可重放（无 HTTP 基址等）：保守视为有越界风险，但不作废——记遥测，交人工判断
-    kernel.log.warn('audit', '会话日志重放失败（保守放行 + 遥测）', { error: String(e) });
+    // 消息不可读（无 HTTP 基址等）：保守视为有越界风险，但不作废——记遥测，交人工判断
+    kernel.log.warn('audit', '会话消息重放失败（保守放行 + 遥测）', { error: String(e) });
     return { clean: true, violations: [`log-unavailable: ${String(e)}`] };
   }
   return { clean: violations.length === 0, violations };
