@@ -131,35 +131,45 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async awaitIdle(id, o) {
-      // 平台 wait 无请求体（[A]）且对已 idle 会话立即失败——只作唤醒加速（2s 短等待）。
-      // idle/终态判定权威 = ctx.session.get().outcome（进程内 [A] Session.Info；实测 messages/
-      // sessionLog 的 REST/回放在无凭据进程内不可达——M0 后备切换，1.4 §3 使用规则）。
+      // 忠实平台 wait 语义（实测修正）：wait **阻塞到会话 idle**（无请求体，[A]）——
+      // 返回即 idle 到来；对未启动会话会早返回（T-w 竞态）。
+      // 终态区分用 ctx.session.get().outcome（failed/interrupted 有值；正常 idle 为 undefined）。
       const deadline = Date.now() + o.timeoutMs;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2_000);
-      const onOuterAbort = () => controller.abort();
-      o.signal.addEventListener('abort', onOuterAbort, { once: true });
-      try {
+      while (Date.now() < deadline) {
+        if (o.signal.aborted) return 'timeout';
+        const remain = deadline - Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), remain);
+        const onOuterAbort = () => controller.abort();
+        o.signal.addEventListener('abort', onOuterAbort, { once: true });
+        const t0 = Date.now();
+        let waitFailed = false;
         try {
           await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
-        } catch { /* 立即失败/503：落入轮询 */ }
-        clearTimeout(timer); // wait 已返回：2s abort 定时器作废——轮询只受外部 signal 与 deadline 约束
-        while (Date.now() < deadline) {
-          if (o.signal.aborted) return 'timeout';
-          try {
-            const raw: any = await ctx.session.get({ sessionID: id });
-            const outcome = raw?.outcome;
-            if (outcome === 'succeeded') return 'idle';
-            if (outcome === 'failed') return 'failed';
-            if (outcome === 'interrupted') return 'interrupted';
-          } catch { /* 会话被移除等：继续轮询至 deadline */ }
-          await new Promise((r) => setTimeout(r, 3_000));
+        } catch {
+          waitFailed = true; // 503/未启动早返回/abort
+        } finally {
+          clearTimeout(timer);
+          o.signal.removeEventListener('abort', onOuterAbort);
         }
-        return 'timeout';
-      } finally {
-        clearTimeout(timer);
-        o.signal.removeEventListener('abort', onOuterAbort);
+        if (o.signal.aborted) return 'timeout';
+        const waited = Date.now() - t0;
+        try {
+          const raw: any = await ctx.session.get({ sessionID: id });
+          const outcome = raw?.outcome;
+          if (outcome === 'failed') return 'failed';
+          if (outcome === 'interrupted') return 'interrupted';
+          if (outcome === 'succeeded') return 'idle';
+        } catch { /* 会话查询失败：继续判定 */ }
+        // wait 立即返回（<3s）或失败且无 outcome：早返回竞态（会话未启动）→ 退避后重 wait
+        if (waited < 3_000 || waitFailed) {
+          await new Promise((r) => setTimeout(r, 5_000));
+          continue;
+        }
+        // wait 阻塞后返回 + outcome undefined：控制型 idle（回合正常结束）→ 'idle'
+        return 'idle';
       }
+      return 'timeout';
     },
 
     async *sessionLog(id, after, o) {

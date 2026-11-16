@@ -276,22 +276,17 @@ export class Scheduler {
     void this.reviewLoop(taskId, sessionId, controller.signal);
   }
 
-  /** reviewer 等待器：idle → 解析 verdict → review-pass / review-rework / review-escalated（fail-closed）。 */
+  /** reviewer 等待器：wait 阻塞到 idle → 结构化 verdict → review-pass / review-escalated（fail-closed）。 */
   async reviewLoop(taskId: string, sessionId: string, signal: AbortSignal): Promise<void> {
     const kernel = this.kernel;
-    let timeoutCycles = 0;
     while (!signal.aborted && kernel.ready && kernel.isLeader()) {
       const t = kernel.projection.tasks.get(taskId);
       if (!t || t.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
-      const outcome = await kernel.hostForSession(sessionId).awaitIdle(sessionId, { timeoutMs: 10 * 60_000, signal });
+      // 单一 30 分钟窗口（真实项目审查回合数多，实测 10 分钟不足——wait 阻塞语义下足够）
+      const outcome = await kernel.hostForSession(sessionId).awaitIdle(sessionId, { timeoutMs: 30 * 60_000, signal });
       if (signal.aborted) return;
       const cur = kernel.projection.tasks.get(taskId);
       if (!cur || cur.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
-      if (outcome === 'timeout') {
-        const s = await kernel.hostForSession(sessionId).getSession(sessionId);
-        if (s.active && ++timeoutCycles < 3) continue; // 继续等（3 轮上限，fail-closed）
-        timeoutCycles = 0;
-      }
       const t2 = kernel.projection.tasks.get(taskId);
       if (!t2 || t2.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
       if (outcome === 'idle') {
