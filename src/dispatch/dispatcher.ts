@@ -39,12 +39,12 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
   // 写前验证（非幂等宿主动作前重读租约，缩小脑裂窗口）
   if (!kernel.lease.verify()) return { ok: false, detail: '租约已丢失，放弃 dispatch' };
 
-  // 1. worktree（一律自 canonical HEAD 分叉——含盲测提交，1.4 §6.6；不用 integration head）
-  // 实测（2026-11-16 v2.3.0，M0 追加）：create 的起始 ref 走 branch 参数（"Starting ref"）；
-  // from 参数实测语义为源目录——传 sha/分支名一律 DirectoryUnavailableError。
-  // 幂等（原则 5）：平台对重名 worktree 自动改名（实测会产生 name-2..name-N 漂移）——
-  // create 前先 list 同名复用，杜绝重试期间的目录增殖。
-  const forkSha = currentSha(kernel.opts.canonical, 'HEAD') ?? '';
+  // 1. worktree 基线：**有 deps 的任务从 refs/dcae/integration 分叉**（依赖任务的产物经合并列车
+  //    进入 integration——canonical HEAD 在 promote 前不含它们，实测 dev 问题 INBOX-000002）；
+  //    无 deps 任务从 canonical HEAD 分叉（含盲测提交，1.4 §6.6）。
+  //    实测：create 起始 ref 走 branch 参数（from=源目录语义）；幂等复用防重名增殖。
+  const baseRef = task.deps.length > 0 ? 'refs/dcae/integration' : 'HEAD';
+  const forkSha = currentSha(kernel.opts.canonical, baseRef) ?? currentSha(kernel.opts.canonical, 'HEAD') ?? '';
   const wtName = `dcae-${task.id.toLowerCase()}-a${t.attempt}`;
   let worktreeDir: string | undefined;
   try {
