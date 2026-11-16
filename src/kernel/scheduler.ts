@@ -35,9 +35,17 @@ export class Scheduler {
 
   /** 心跳 + 唤醒入口（幂等；并发防重入）。 */
   async tick(): Promise<void> {
-    if (this.ticking || !this.kernel.isLeader() || !this.kernel.ready) return;
+    if (this.ticking || !this.kernel.ready) return;
     this.ticking = true;
     try {
+      // follower 接管循环（1.4 §6.5：lock 陈旧 → 任何内核可接管——leader 死亡后的领导权转移）
+      if (!this.kernel.isLeader()) {
+        const floor = this.kernel.eventLog.lastEpoch();
+        if (this.kernel.lease.tryAcquire(floor)) {
+          this.kernel.log.info('scheduler', '接管领导权（lock 陈旧）', { epoch: this.kernel.lease.epoch });
+        }
+        return; // follower：不调度（R4）
+      }
       await this.reconcileWaiters();
       await this.tryDispatch();
       await this.runReviewFlow();
