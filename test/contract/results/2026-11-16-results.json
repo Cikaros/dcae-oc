@@ -5,7 +5,7 @@
     "ok": true,
     "detail": {
       "createStatus": 200,
-      "id": "ses_mwj7pnrot10000000000000000",
+      "id": "ses_mwji6ipmt10000000000000000",
       "metadata": {
         "task": "T-CONTRACT",
         "attempt": 1
@@ -91,9 +91,9 @@
     "name": "worktree 签名",
     "ok": true,
     "detail": {
-      "projectID": "e38d5ef16da41b35cfa333e291fd146a340e7c4d",
+      "projectID": "820f7a0f716a9ccbe136e7c5fb109da852c5ec23",
       "create": {
-        "directory": "C:\\Users\\Cikaros\\.local\\share\\opencode\\worktree\\e38d5e\\dcae-contract-1794830458599"
+        "directory": "C:\\Users\\Cikaros\\.local\\share\\opencode\\worktree\\820f7a\\dcae-contract-1794848041477"
       },
       "listCount": 2,
       "remove": "ok",
@@ -105,7 +105,7 @@
     "name": "工具权限粒度",
     "ok": true,
     "detail": {
-      "session": "ses_e1bc49f69ffeExcEC0C66hQ672",
+      "session": "ses_e1ab85451ffeo5y2RYqrLQrONG",
       "assertWithDenyRule": "denied: Tool.Error: Permission denied: dcae.probe"
     }
   },
@@ -157,7 +157,7 @@
     "ok": true,
     "detail": {
       "subscription": "function",
-      "ambientLocation": "C:\\Users\\Cikaros\\AppData\\Local\\Temp\\dcae-contract-YFcbHx"
+      "ambientLocation": "C:\\Users\\Cikaros\\AppData\\Local\\Temp\\dcae-contract-JLuJ08"
     },
     "note": "跨 location 半由外部 runner 判定"
   },
