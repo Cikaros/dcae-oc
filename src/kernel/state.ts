@@ -67,6 +67,12 @@ export class Projection {
         break;
       case 'dispatch': {
         const d = (e.data ?? {}) as any;
+        if (e.from === e.to) {
+          // tester/reviewer dispatch 标记：只记会话，不迁移状态
+          if (d.role === 'reviewer') t.reviewSessionId = d.sessionId ?? null;
+          else if (d.role === 'tester') t.sessionId = d.sessionId ?? null;
+          break;
+        }
         t.state = 'RUNNING';
         t.sessionId = d.sessionId ?? null;
         t.worktree = d.worktree ?? null;

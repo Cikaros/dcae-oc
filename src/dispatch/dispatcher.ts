@@ -145,9 +145,10 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
     return { ok: false, detail: `admission prompt 失败：${String(e)}` };
   }
 
-  // 8. 事件 dispatch + 预算定时器由 Scheduler 挂接
+  // 8. 事件：dev dispatch = READY→RUNNING 迁移；tester/reviewer 仅追加无迁移标记
+  //    （dispatch 对非 dev 角色不得改变状态——曾致 REVIEW→RUNNING 错乱、reviewLoop 失效）
   const closureHash = computeClosureHash(kernel, task);
-  const ev = kernel.appendTransition(t, 'dispatch', {
+  const data = {
     sessionId: sid,
     worktree: worktreeDir,
     forkSha,
@@ -155,9 +156,15 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
     closureHash,
     attempt: t.attempt,
     role,
-    key: `dispatch:${task.id}:${t.attempt}`,
-  });
-  if (!ev) return { ok: false, detail: '事件追加失败（租约丢失）' };
+    key: `dispatch:${task.id}:${role}:${t.attempt}`,
+  };
+  if (role === 'dev') {
+    const ev = kernel.appendTransition(t, 'dispatch', data);
+    if (!ev) return { ok: false, detail: '事件追加失败（租约丢失）' };
+  } else {
+    const ev = kernel.appendMarkForTask(t, 'dispatch', data);
+    if (!ev) return { ok: false, detail: '事件追加失败（租约丢失）' };
+  }
   kernel.log.info('dispatch', 'dispatch 完成', { task: task.id, role, sessionId: sid, ms: Date.now() - t0 });
   return { ok: true, sessionId: sid };
 }
@@ -178,7 +185,7 @@ function normalizeWt(p: string): string {
 function admissionText(task: TaskDef, role: Role, attempt: number): string {
   if (role === 'reviewer') {
     return [
-      `你是 DCAE 任务 ${task.id} 的审查者。审查该 worktree 中相对分叉点的全部改动（可用 git diff 只读查看）。`,
+      `你是 DCAE 任务 ${task.id} 的审查者。直接阅读 worktree 中的源文件进行审查（shell 不可用，不做 diff）。`,
       '零写、零 shell。审查完成后，最后一条消息的最后一行必须是以下之一（内核机器解析）：',
       'verdict: approve',
       'verdict: request_changes',

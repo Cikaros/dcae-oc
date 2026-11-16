@@ -62,11 +62,22 @@ async function main(): Promise<number> {
 
   switch (cmd) {
     case 'init': {
-      const r = initProject(root, {
+      // init 显式目标目录（可以不存在——脚手架负责创建；禁止回退 cwd，防误写安装区）
+      const flagVals = new Set(['--runner', '--plugin', '--model']);
+      let target: string | null = null;
+      for (let i = 1; i < argv.length; i++) {
+        const a = argv[i]!;
+        if (a.startsWith('--')) { if (flagVals.has(a)) i++; continue; }
+        target = a;
+        break;
+      }
+      const targetDir = resolve(target ?? process.cwd());
+      const r = initProject(targetDir, {
         testRunner: arg(argv, '--runner'),
         pluginRef: arg(argv, '--plugin'),
         model: arg(argv, '--model'),
       });
+      console.log(`目标: ${targetDir}`);
       console.log('已写入:', r.written.join(', ') || '（无）');
       if (r.skipped.length > 0) console.log('已跳过（存在）:', r.skipped.join(', '));
       return 0;

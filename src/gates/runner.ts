@@ -86,6 +86,20 @@ export async function runGatePipeline(kernel: Kernel, taskId: string, attempt: n
     return { ...outcome, signature: sha256('task-missing') };
   }
 
+  // 内核自动提交 dev worktree 的未提交改动（冻结 ref 需要committed内容，1.4 §6.7；
+  // dev 只写不提交——提交是内核产出的证据，author = kernel 身份）
+  try {
+    const { git } = await import('../util/git.ts');
+    const st = git(worktree, ['status', '--porcelain']);
+    if (st.ok && st.stdout.trim() !== '') {
+      git(worktree, ['add', '-A']);
+      git(worktree, ['-c', 'user.name=DCAE Kernel', '-c', 'user.email=dcae@kernel.local', 'commit', '-m', `dcae(dev): ${taskId} attempt ${attempt}`]);
+      kernel.log.info('gates', 'dev 改动已由内核提交', { taskId, worktree });
+    }
+  } catch (e) {
+    kernel.log.warn('gates', '自动提交失败（门禁继续）', { taskId, error: String(e) });
+  }
+
   const headSha = kernel.host().appVersion() ? await getHead(kernel, worktree) : null;
   const started = Date.now();
   const steps = [...flattenPipeline(gates.pipeline), ...def.checks.map((c) => ({ cmd: c.run.cmd, args: c.run.args }))];
