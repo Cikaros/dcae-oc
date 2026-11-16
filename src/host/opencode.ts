@@ -181,6 +181,19 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
       return lastN > 0 && all.length > lastN ? all.slice(-lastN) : all;
     },
 
+    async sessionMessages(id) {
+      const out = await httpJson<any>('GET', `/api/session/${encodeURIComponent(id)}/message?limit=200${locationQuery(id)}`);
+      const arr = Array.isArray(out) ? out : ((out?.data as any[]) ?? []);
+      return (arr ?? []).map((m: any) => ({
+        type: String(m?.type ?? ''),
+        finish: m?.finish,
+        error: m?.error ? { type: m.error.type, message: m.error.message } : undefined,
+        text: Array.isArray(m?.parts)
+          ? m.parts.filter((p: any) => p?.type === 'text').map((p: any) => String(p.text ?? '')).join('\n')
+          : undefined,
+      }));
+    },
+
     async getSession(id) {
       let raw: any;
       try {

@@ -21,6 +21,7 @@ export class Projection {
         attempt: 1,
         blockedReason: null,
         sessionId: null,
+        reviewSessionId: null,
         worktree: null,
         admissionId: null,
         idleNudges: 0,
@@ -86,6 +87,7 @@ export class Projection {
         break;
       case 'gate-pass':
         t.state = 'REVIEW';
+        t.reviewSessionId = null;
         break;
       case 'gate-exhausted':
       case 'execution-failed':

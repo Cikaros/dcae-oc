@@ -48,7 +48,7 @@ export async function submitBlindTests(kernel: Kernel, req: IngestRequest, key: 
     copyFileSync(src, dst);
   }
   git(kernel.opts.canonical, ['add', `acceptance/${req.task}`]);
-  const commit = git(kernel.opts.canonical, ['commit', '-m', `dcae(tests): ${req.task}`, '--author=DCAE Kernel <dcae@kernel.local>']);
+  const commit = git(kernel.opts.canonical, ['-c', 'user.name=DCAE Kernel', '-c', 'user.email=dcae@kernel.local', 'commit', '-m', `dcae(tests): ${req.task}`, '--author=DCAE Kernel <dcae@kernel.local>']);
   if (!commit.ok) {
     // 无变更也会走这里（重复提交）——视为已提交
     kernel.log.warn('audit', '测试提交无变更或失败', { stderr: commit.stderr.slice(0, 200) });

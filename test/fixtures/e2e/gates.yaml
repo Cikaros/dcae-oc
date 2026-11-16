@@ -1,0 +1,10 @@
+# e2e fixture 门禁（最简：仅 test 管线；typecheck/lint 由真实项目按需配置）
+schema_version: 1
+runner: host
+commands:
+  test: { argv: ['bun', 'test'], arg_globs: ['src/**', 'acceptance/**'] }
+pipeline: [test]
+global: []
+invariants_run: never
+probe_argv0: []
+output_cap_kb: 256

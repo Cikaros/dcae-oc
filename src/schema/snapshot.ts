@@ -11,6 +11,8 @@ export const TaskRuntimeSchema = z.object({
   attempt: z.number().int().positive().default(1),
   blockedReason: z.string().nullable().default(null),
   sessionId: z.string().nullable().default(null),
+  /** REVIEW 态的 reviewer 会话（审查闭环调度用）。 */
+  reviewSessionId: z.string().nullable().default(null),
   worktree: z.string().nullable().default(null),
   admissionId: z.string().nullable().default(null),
   idleNudges: z.number().int().nonnegative().default(0),

@@ -57,6 +57,14 @@ export interface SavedApproval {
   [k: string]: unknown;
 }
 
+/** 会话消息摘要（审查 verdict 解析用）。 */
+export interface SessionMessageBrief {
+  type: string;
+  finish?: string;
+  error?: { type?: string; message?: string };
+  text?: string;
+}
+
 export class HostUnavailable extends Error {
   constructor(
     message: string,
@@ -109,6 +117,9 @@ export interface HostPort {
 
   /** 一次性读取日志尾部（awaitIdle/读审计的便捷形态）。 */
   sessionLogTail(id: string, lastN?: number): Promise<SessionLogItem[]>;
+
+  /** 会话消息摘要（REST 兜底，按会话 location 路由；审查 verdict 解析依赖）。 */
+  sessionMessages(id: string): Promise<SessionMessageBrief[]>;
 
   getSession(id: string): Promise<{
     exists: boolean;

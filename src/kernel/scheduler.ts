@@ -10,8 +10,10 @@ import { join } from 'node:path';
 export class Scheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private waiters = new Map<string, AbortController>();
+  private reviewWaiters = new Map<string, AbortController>();
   private budgetTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private ticking = false;
+  private merging = false;
 
   constructor(private kernel: Kernel) {}
 
@@ -25,6 +27,8 @@ export class Scheduler {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     for (const [, c] of this.waiters) c.abort();
     this.waiters.clear();
+    for (const [, c] of this.reviewWaiters) c.abort();
+    this.reviewWaiters.clear();
     for (const [, t] of this.budgetTimers) clearTimeout(t);
     this.budgetTimers.clear();
   }
@@ -36,6 +40,8 @@ export class Scheduler {
     try {
       await this.reconcileWaiters();
       await this.tryDispatch();
+      await this.runReviewFlow();
+      await this.runMergeTrain();
     } finally {
       this.ticking = false;
     }
@@ -238,6 +244,123 @@ export class Scheduler {
     (timer as unknown as { unref?: () => void }).unref?.();
     this.budgetTimers.set(taskId, timer);
   }
+
+  // ---------- 审查闭环（REVIEW 态：dispatch reviewer → verdict → 迁移）与合并列车触发 ----------
+
+  /** REVIEW 态：为无 reviewer 会话的任务 dispatch；已有的挂等待器。 */
+  async runReviewFlow(): Promise<void> {
+    for (const t of this.kernel.projection.tasks.values()) {
+      if (t.state !== 'REVIEW') continue;
+      if (t.reviewSessionId) {
+        if (!this.reviewWaiters.has(t.id)) this.attachReviewWaiter(t.id, t.reviewSessionId);
+        continue;
+      }
+      const def = this.kernel.taskDef(t.id);
+      if (!def) continue;
+      const { dispatchReviewer } = await import('../dispatch/dispatcher.ts');
+      const out = await dispatchReviewer(this.kernel, def);
+      if (!out.ok || !out.sessionId) {
+        this.kernel.log.warn('scheduler', 'reviewer dispatch 失败', { task: t.id, detail: out.detail });
+        continue;
+      }
+      t.reviewSessionId = out.sessionId;
+      this.kernel.log.info('scheduler', 'reviewer 已调度', { task: t.id, sessionId: out.sessionId });
+      this.attachReviewWaiter(t.id, out.sessionId);
+    }
+  }
+
+  attachReviewWaiter(taskId: string, sessionId: string): void {
+    if (this.reviewWaiters.has(taskId)) return;
+    const controller = new AbortController();
+    this.reviewWaiters.set(taskId, controller);
+    void this.reviewLoop(taskId, sessionId, controller.signal);
+  }
+
+  /** reviewer 等待器：idle → 解析 verdict → review-pass / review-rework / review-escalated（fail-closed）。 */
+  async reviewLoop(taskId: string, sessionId: string, signal: AbortSignal): Promise<void> {
+    const kernel = this.kernel;
+    let timeoutCycles = 0;
+    while (!signal.aborted && kernel.ready && kernel.isLeader()) {
+      const t = kernel.projection.tasks.get(taskId);
+      if (!t || t.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
+      const outcome = await kernel.host().awaitIdle(sessionId, { timeoutMs: 10 * 60_000, signal });
+      if (signal.aborted) return;
+      const cur = kernel.projection.tasks.get(taskId);
+      if (!cur || cur.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
+      if (outcome === 'timeout') {
+        const s = await kernel.host().getSession(sessionId);
+        if (s.active && ++timeoutCycles < 3) continue; // 继续等（3 轮上限，fail-closed）
+        timeoutCycles = 0;
+      }
+      // 会话已终（或超时上限）：解析 verdict
+      let verdict: 'approve' | 'request_changes' | 'escalate' | null = null;
+      let reviewText = '';
+      try {
+        const msgs = await kernel.host().sessionMessages(sessionId);
+        const lastA = [...msgs].reverse().find((m) => m.type === 'assistant');
+        reviewText = lastA?.text ?? '';
+        verdict = parseVerdict(reviewText);
+      } catch (e) {
+        kernel.log.warn('scheduler', 'reviewer 消息读取失败', { taskId, error: String(e) });
+      }
+      const t2 = kernel.projection.tasks.get(taskId);
+      if (!t2 || t2.state !== 'REVIEW') { this.reviewWaiters.delete(taskId); return; }
+      if (verdict === 'approve') {
+        const { freezeTask } = await import('../merge/train.ts');
+        const sha = t2.worktree ? freezeTask(kernel, taskId, t2.worktree) : null;
+        kernel.appendTransition(t2, 'review-pass', { sessionId, frozenRefSha: sha, verdict });
+        this.reviewWaiters.delete(taskId);
+        return;
+      }
+      if (verdict === 'request_changes' && kernel.guard(t2, 'review-rework').ok) {
+        kernel.appendTransition(t2, 'review-rework', { sessionId });
+        t2.reviewSessionId = null;
+        this.reviewWaiters.delete(taskId);
+        // 通知 dev 会话返工（findings 摘要随 prompt）
+        if (t2.sessionId) {
+          try {
+            await kernel.host().prompt(t2.sessionId, `审查要求返工（verdict: request_changes）：\n${reviewText.slice(0, 1500)}\n修复后立即 dcae_submit。`, { messageId: `msg_${Date.now().toString(36)}rw`, delivery: 'queue' });
+          } catch { /* dev 会话由等待器/提醒兜底 */ }
+        }
+        return;
+      }
+      // escalate / unparsable / rework 轮次耗尽 → BLOCKED + inbox（fail-closed）
+      const { createInboxItem } = await import('../inbox/inbox.ts');
+      createInboxItem(kernel, {
+        kind: 'escalation',
+        task: taskId,
+        question: `审查未通过自动闭环（verdict=${verdict ?? 'unparsable'}）：${(reviewText || '（无审查文本）').slice(0, 300)}`,
+        options: [
+          { id: 'proceed', label: '人工判读后继续（保留证据）' },
+          { id: 'revalidate', label: '重跑审查' },
+          { id: 'cancel', label: '取消任务' },
+        ],
+      });
+      kernel.appendTransition(t2, 'review-escalated', { sessionId, verdict: verdict ?? 'unparsable' });
+      this.reviewWaiters.delete(taskId);
+      return;
+    }
+    this.reviewWaiters.delete(taskId);
+  }
+
+  /** ACCEPTED 任务逐节合并（串行；merge-ok/merge-fail/rebase-conflict 由 MergeTrain 追加）。 */
+  async runMergeTrain(): Promise<void> {
+    if (this.merging) return;
+    const accepted = [...this.kernel.projection.tasks.values()].filter((t) => t.state === 'ACCEPTED').sort((a, b) => a.id.localeCompare(b.id));
+    if (accepted.length === 0) return;
+    this.merging = true;
+    try {
+      const { mergeOne } = await import('../merge/train.ts');
+      for (const t of accepted) {
+        if (this.kernel.projection.tasks.get(t.id)?.state !== 'ACCEPTED') continue;
+        await mergeOne(this.kernel, t.id);
+      }
+    } catch (e) {
+      this.kernel.log.error('scheduler', '合并列车异常', { error: String(e) });
+    } finally {
+      this.merging = false;
+    }
+  }
 }
 
 async function collectProvisionalEvidence(kernel: Kernel, taskId: string, sessionId: string): Promise<void> {
@@ -278,4 +401,10 @@ async function latestMarker(kernel: Kernel, sessionId: string): Promise<'succeed
 
 function depsMerged(kernel: Kernel, def: import('../schema/task.ts').TaskDef): boolean {
   return def.deps.every((d) => kernel.projection.tasks.get(d)?.state === 'MERGED');
+}
+
+/** 从 reviewer 最后一条 assistant 文本解析 verdict（1.4 §7.4 verdict 枚举）。 */
+function parseVerdict(text: string): 'approve' | 'request_changes' | 'escalate' | null {
+  const m = /verdict:\s*(approve|request_changes|escalate)/i.exec(text ?? '');
+  return m ? (m[1]!.toLowerCase() as 'approve' | 'request_changes' | 'escalate') : null;
 }

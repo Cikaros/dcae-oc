@@ -45,6 +45,7 @@ function fakeHost(): HostPort {
     interrupt: async () => {},
     sessionLog: function* () {} as unknown as HostPort['sessionLog'],
     sessionLogTail: async () => [],
+    sessionMessages: async () => [],
     getSession: async () => ({ exists: true, active: false, directory: '', tokens: { input: 0, output: 0, reasoning: 0 }, costUsd: 0 }),
     createWorktree: async (_p, name) => ({ directory: join(BASE, name) }),
     listWorktrees: async () => [],

@@ -13,6 +13,8 @@ import { dcaeGlobMatch } from '../util/glob.ts';
 import { normalizeForMatch } from '../util/paths.ts';
 
 const INTEGRATION_REF = 'refs/dcae/integration';
+/** 内核提交身份（目标仓库可能无 user.name/email 配置——merge/rebase 建提交时必需）。 */
+const GIT_IDENTITY = ['-c', 'user.name=DCAE Kernel', '-c', 'user.email=dcae@kernel.local'];
 
 export function acceptedRef(taskId: string): string {
   return `refs/dcae/accepted/${taskId}`;
@@ -52,8 +54,8 @@ export async function mergeOne(kernel: Kernel, taskId: string): Promise<{ ok: bo
   const mergeDir = ensureMergeWorktree(kernel);
   if (!mergeDir) return { ok: false, detail: '合并工作树不可用' };
 
-  // 1. git merge --no-ff <frozen>
-  const merge = git(mergeDir, ['merge', '--no-ff', frozen]);
+  // 1. git merge --no-ff <frozen>（内核身份）
+  const merge = git(mergeDir, [...GIT_IDENTITY, 'merge', '--no-ff', frozen]);
   if (!merge.ok) {
     // 2. 冲突分类
     const conflicted = conflictedFiles(mergeDir);
@@ -133,7 +135,7 @@ function rebaseFrozen(kernel: Kernel, mergeDir: string, taskId: string, frozen: 
   if (!integHead) return { ok: false };
   const tmpBranch = `refs/heads/dcae-rebase-${taskId.toLowerCase()}-${Date.now()}`;
   git(kernel.opts.canonical, ['update-ref', tmpBranch, frozen]);
-  const r = git(mergeDir, ['rebase', '--onto', integHead, `${frozen}~1`, tmpBranch.replace('refs/heads/', '')]);
+  const r = git(mergeDir, [...GIT_IDENTITY, 'rebase', '--onto', integHead, `${frozen}~1`, tmpBranch.replace('refs/heads/', '')]);
   if (!r.ok) {
     git(mergeDir, ['rebase', '--abort']);
     git(kernel.opts.canonical, ['update-ref', '-d', tmpBranch]);

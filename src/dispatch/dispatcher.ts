@@ -28,7 +28,12 @@ export async function dispatchTester(kernel: Kernel, task: TaskDef): Promise<Dis
   return dispatchRole(kernel, task, 'tester');
 }
 
-async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): Promise<DispatchOutcome> {
+/** reviewer 调度（审查闭环；REVIEW 态由 Scheduler 调用）。 */
+export async function dispatchReviewer(kernel: Kernel, task: TaskDef): Promise<DispatchOutcome> {
+  return dispatchRole(kernel, task, 'reviewer');
+}
+
+export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): Promise<DispatchOutcome> {
   const t = kernel.projection.task(task.id);
   const t0 = Date.now();
   // 写前验证（非幂等宿主动作前重读租约，缩小脑裂窗口）
@@ -171,11 +176,22 @@ function normalizeWt(p: string): string {
 }
 
 function admissionText(task: TaskDef, role: Role, attempt: number): string {
+  if (role === 'reviewer') {
+    return [
+      `你是 DCAE 任务 ${task.id} 的审查者。审查该 worktree 中相对分叉点的全部改动（可用 git diff 只读查看）。`,
+      '零写、零 shell。审查完成后，最后一条消息的最后一行必须是以下之一（内核机器解析）：',
+      'verdict: approve',
+      'verdict: request_changes',
+      'verdict: escalate',
+      'request_changes/escalate 时在之前列出 findings（severity/claim/file/建议 verify 命令）。',
+    ].join('\n');
+  }
   const lines = [
     `你是 DCAE 任务 ${task.id} 的 ${role}（attempt ${attempt}）。目标：${task.objective}`,
+    `重要：完成实现且自测通过后，必须立即调用 dcae_submit 工具（参数 summary）结束——这是任务完成的唯一信号；不要在可提交后继续打磨。受阻时调用 dcae_question。`,
     role === 'tester'
-      ? '在 acceptance/<task>/ 下编写盲测验收测试，完成后调用 dcae_test_submit 提交。不得读取 scratch 之外的实现。'
-      : `在写范围 ${task.scope.write.join(', ') || '(见任务)'} 内实现；shell 仅限命令表白名单；完成后调用 dcae_submit {summary}。受阻时调用 dcae_question。`,
+      ? '在 acceptance/<task>/ 下编写盲测验收测试，完成后调用 dcae_test_submit {paths}。不得读取 scratch 之外的实现。'
+      : `写范围：${task.scope.write.join(', ') || '(见任务定义)'}；shell 仅限命令表白名单（test 等）。`,
   ];
   return lines.join('\n');
 }

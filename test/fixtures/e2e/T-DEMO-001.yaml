@@ -15,4 +15,4 @@ checks:
     covers: [SPEC-DEMO]
     timeout_s: 60
 invariants: []
-budget: { attempts: 2, tokens: 60000, minutes: 10, review_cycles: 1 }
+budget: { attempts: 3, tokens: 200000, minutes: 30, review_cycles: 1 }
