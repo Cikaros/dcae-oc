@@ -64,17 +64,21 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
       });
       worktreeDir = wt.directory;
     } catch (e) {
-      return { ok: false, detail: `worktree 创建失败：${String(e)}` };
-    }
-  }
-  if (!worktreeDir) {
-    try {
-      const wt = await kernel.host().createWorktree(kernel.opts.projectID, wtName, {
-        branch: forkSha,
-      });
-      worktreeDir = wt.directory;
-    } catch (e) {
-      return { ok: false, detail: `worktree 创建失败：${String(e)}` };
+      const msg = String(e);
+      if (/missing|registered|WorktreeError/i.test(msg)) {
+        // 自愈（实测：目录被外部删除后注册残留 → "missing but registered"）：prune 清注册后重试一次
+        const { git } = await import('../util/git.ts');
+        git(kernel.opts.canonical, ['worktree', 'prune']);
+        try {
+          const wt = await kernel.host().createWorktree(kernel.opts.projectID, wtName, { branch: forkSha });
+          worktreeDir = wt.directory;
+          kernel.log.info('dispatch', 'worktree 注册残留已 prune 并重建', { taskId: task.id });
+        } catch (e2) {
+          return { ok: false, detail: `worktree 创建失败（prune 后重试仍失败）：${String(e2)}` };
+        }
+      } else {
+        return { ok: false, detail: `worktree 创建失败：${msg}` };
+      }
     }
   }
   if (!worktreeDir || !existsSync(worktreeDir)) return { ok: false, detail: `worktree 目录无效：${worktreeDir}` };
