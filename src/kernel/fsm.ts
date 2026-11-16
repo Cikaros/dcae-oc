@@ -159,10 +159,13 @@ export function decisionRestore(kind: string, option: string, cur: State): State
     }
     case 'escalation':
     case 'revalidation': {
-      if (option === 'revalidate') return 'TEST_WRITING';
-      if (option === 'proceed') return 'VERIFYING'; // 人工"保留证据继续"
+      if (option === 'revalidate') {
+        // 重跑审查（escalation 的语境是审查异常终结）；盲测重写走 revalidation 类项
+        return 'REVIEW';
+      }
+      if (option === 'proceed') return 'VERIFYING'; // 人工"保留证据继续"（重跑门禁）
       if (option === 'cancel') return null;
-      return 'READY';
+      return 'REVIEW';
     }
     case 'test-exhausted': {
       if (option === 'retry') return 'TEST_WRITING';
