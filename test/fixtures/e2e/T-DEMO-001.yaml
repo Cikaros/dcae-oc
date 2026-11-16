@@ -1,0 +1,18 @@
+schema_version: 1
+id: T-DEMO-001
+objective: 实现 src/hello.ts 导出 hello() 返回字符串 "hello"，使 bun test 通过
+spec_refs: [SPEC-DEMO]
+deps: []
+role: dev
+scope:
+  write: ['src/**']
+  shell: ['test']
+blind_tests: false
+acceptance_tests: []
+checks:
+  - id: hello-test
+    run: { cmd: test, args: ['src/hello.test.ts'] }
+    covers: [SPEC-DEMO]
+    timeout_s: 60
+invariants: []
+budget: { attempts: 2, tokens: 60000, minutes: 10, review_cycles: 1 }

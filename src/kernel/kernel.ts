@@ -137,6 +137,13 @@ export class Kernel {
 
   async init(): Promise<void> {
     const t0 = Date.now();
+    // 0. 目标项目 opencode.json 顶层 `dcae` 键 → 配置合并（实测 ctx.options 通道不可用——
+    //    2026-11-16 rawOptions:{}；配置先于代码原则：项目 config 是权威载体）
+    try {
+      const { readProjectDcaeConfig } = await import('../schema/common.ts');
+      const projCfg = readProjectDcaeConfig(this.opts.canonical);
+      if (projCfg) Object.assign(this.config, projCfg);
+    } catch { /* 配置缺失/损坏：用默认 */ }
     // 1. 快照 + 事件重放 → 投影（快照损坏 → 全量重放）
     const snapFile = join(this.dcaeDir, 'state', 'snapshot.json');
     if (existsSync(snapFile)) {

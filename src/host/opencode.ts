@@ -20,6 +20,10 @@ import {
 } from './port.ts';
 import { resolveArgv0 } from '../util/argv-resolve.ts';
 
+function normalizeDir(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
 /** 插件进程内可拿到的 ctx 适配输入。 */
 export interface AdapterCtx {
   ctx: Plugin.Context;
@@ -30,6 +34,13 @@ export interface AdapterCtx {
 export function createOpenCodeHost(input: AdapterCtx): HostPort {
   const { ctx } = input;
   const httpBase = normalizeBase(input.httpBase ?? process.env.DCAE_OPENCODE_URL);
+  // 会话所在 location（REST 兜底调用必须按会话 location 路由——worktree 会话在 canonical 视角不可见，实测教训）
+  const sessionDirs = new Map<string, string>();
+
+  function locationQuery(id: string): string {
+    const dir = sessionDirs.get(id);
+    return dir ? `&location%5Bdirectory%5D=${encodeURIComponent(dir)}` : '';
+  }
 
   async function httpJson<T>(method: string, path: string, body?: unknown): Promise<T> {
     if (!httpBase) throw new HostUnavailable(`HTTP 兜底不可用（无 serverUrl）: ${method} ${path}`, 'no-http-base');
@@ -84,6 +95,7 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
         metadata: (i.metadata ?? null) as any,
         permissions: (i.permissions as Rule[] | undefined) ?? null,
       });
+      sessionDirs.set(i.id, i.directory.replace(/\\/g, '/'));
       return mapSessionInfo(out);
     },
 
@@ -119,29 +131,31 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async awaitIdle(id, o) {
-      // wait 无请求体（[A]：204/503）；AbortSignal 实现超时；返回后经日志尾部 Idle 标记 outcome 判定（§7.2）
+      // 平台 wait 无请求体（[A]：204/503）且对已 idle 会话可能立即失败——它只作"唤醒加速"，
+      // 不作正确性依赖（R5）。超时语义：在剩余时间内轮询会话日志尾部 Idle 标记（outcome），
+      // 到 deadline 仍无标记 → 'timeout'（§7.2：标记与 admission 的先后核对在内核层）。
+      const deadline = Date.now() + o.timeoutMs;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), o.timeoutMs);
       const onOuterAbort = () => controller.abort();
       o.signal.addEventListener('abort', onOuterAbort, { once: true });
       try {
-        await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
-      } catch (e) {
-        if (controller.signal.aborted) {
-          if (o.signal.aborted) return 'timeout';
-          return 'timeout';
+        try {
+          await (ctx.session as any).wait({ sessionID: id }, { signal: controller.signal });
+        } catch { /* 503/早返回竞态（T-w）：落入轮询路径 */ }
+        while (Date.now() < deadline) {
+          if (o.signal.aborted || controller.signal.aborted) return 'timeout';
+          const marker = await latestIdleMarker(this, id);
+          if (marker === 'succeeded') return 'idle';
+          if (marker === 'failed') return 'failed';
+          if (marker === 'interrupted') return 'interrupted';
+          await new Promise((r) => setTimeout(r, 3_000));
         }
-        // 503 等失败：落入日志轮询路径
+        return 'timeout';
       } finally {
         clearTimeout(timer);
         o.signal.removeEventListener('abort', onOuterAbort);
       }
-      const marker = await latestIdleMarker(this, id);
-      if (marker === 'succeeded') return 'idle';
-      if (marker === 'failed') return 'failed';
-      if (marker === 'interrupted') return 'interrupted';
-      // wait 返回但无标记：早返回竞态（T-w）——保守报 timeout，内核按无提交空闲路径处置
-      return 'timeout';
     },
 
     async *sessionLog(id, after, o) {
@@ -196,14 +210,30 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async createWorktree(projectID, name, o) {
-      // 签名 {projectID, from?, branch?, directory?, name?}（[D]，WorktreeCreateInput 已核实）
-      const out = await ctx.worktree.create({
-        projectID,
-        name,
-        ...(o?.from !== undefined ? { from: o.from } : {}),
-        ...(o?.branch !== undefined ? { branch: o.branch } : {}),
-      } as any);
-      return { directory: String((out as any)?.directory ?? '') };
+      // 签名 {projectID, from?, branch?, directory?, name?}（[D]，WorktreeCreateInput 已核实）。
+      // 实测：branch = 起始 ref（"Starting ref"）；from = 源目录语义（传非目录值 → DirectoryUnavailableError），
+      // 故 HostPort 的 o.branch 映射平台 branch；o.from 仅在接受目录语义时透传（本设计不用）。
+      // 幂等（原则 5）：DestinationExistsError → 复用既有同名 worktree（dispatch 重试语义）。
+      try {
+        const out = await ctx.worktree.create({
+          projectID,
+          name,
+          ...(o?.branch !== undefined ? { branch: o.branch } : {}),
+          ...(o?.from !== undefined ? { from: o.from } : {}),
+        } as any);
+        return { directory: String((out as any)?.directory ?? '') };
+      } catch (e) {
+        if (!/DestinationExists/i.test(String(e))) throw e;
+        const list = (await ctx.worktree.list({ projectID } as never)) as readonly { directory: string }[];
+        const hit = (list ?? []).find((w) => normalizeDir(w.directory).endsWith('/' + name));
+        if (hit) return { directory: hit.directory };
+        throw e;
+      }
+    },
+
+    async listWorktrees(projectID) {
+      const out = (await ctx.worktree.list({ projectID } as never)) as readonly { directory: string; type?: string }[];
+      return (out ?? []).map((w) => ({ directory: String(w.directory ?? ''), type: w.type as 'root' | 'worktree' | undefined }));
     },
 
     async removeWorktree(projectID, directory, force) {
@@ -273,7 +303,7 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
   }
 
   async function fetchLogPage(id: string, after: number): Promise<SessionLogItem[]> {
-    const out = await httpJson<any>('GET', `/api/experimental/session/${encodeURIComponent(id)}/log?after=${after}`);
+    const out = await httpJson<any>('GET', `/api/experimental/session/${encodeURIComponent(id)}/log?after=${after}${locationQuery(id)}`);
     const arr = Array.isArray(out) ? out : ((out?.data as any[]) ?? []);
     return arr.map((it, i) => ({ seq: Number(it.seq ?? after + i), ts: it.ts ?? it.time, type: it.type, data: it }));
   }

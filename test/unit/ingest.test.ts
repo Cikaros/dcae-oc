@@ -47,6 +47,7 @@ function fakeHost(): HostPort {
     sessionLogTail: async () => [],
     getSession: async () => ({ exists: true, active: false, directory: '', tokens: { input: 0, output: 0, reasoning: 0 }, costUsd: 0 }),
     createWorktree: async (_p, name) => ({ directory: join(BASE, name) }),
+    listWorktrees: async () => [],
     removeWorktree: async () => {},
     exec: async () => ({ exit: 0, stdout: Buffer.from(''), stderr: Buffer.from(''), timedOut: false, durationMs: 1 }),
     savedApprovals: async () => [],

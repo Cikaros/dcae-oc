@@ -148,6 +148,7 @@ export class Scheduler {
           if (nudges === 0) {
             kernel.appendMarkForTask(cur, 'idle-nudge', { sessionId, kind });
             await this.injectReminder(sessionId, taskId, kind);
+            await new Promise((r) => setTimeout(r, 60_000)); // 提醒后观察窗：给 LLM 回合时间（节流）
           } else {
             await collectProvisionalEvidence(kernel, taskId, sessionId);
             kernel.appendTransition(cur, 'idle-no-submit', { sessionId, kind });
@@ -170,12 +171,14 @@ export class Scheduler {
           if (marker === 'succeeded') {
             kernel.appendMarkForTask(cur, 'idle-nudge', { sessionId, kind, via: 'log-replay' });
             await this.injectReminder(sessionId, taskId, kind);
+            await new Promise((r) => setTimeout(r, 60_000));
           } else if (marker === 'failed' || marker === 'interrupted') {
             kernel.appendTransition(cur, marker === 'failed' ? 'execution-failed' : 'execution-interrupted', { sessionId, via: 'log-replay' });
             return;
           } else {
             kernel.appendMarkForTask(cur, 'idle-nudge', { sessionId, kind, via: 'conservative' });
             await this.injectReminder(sessionId, taskId, kind);
+            await new Promise((r) => setTimeout(r, 60_000)); // 节流：避免失败路径风暴（实测教训）
           }
         }
         timeoutMs = 5 * 60_000;

@@ -35,15 +35,42 @@ async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): Promise<
   if (!kernel.lease.verify()) return { ok: false, detail: '租约已丢失，放弃 dispatch' };
 
   // 1. worktree（一律自 canonical HEAD 分叉——含盲测提交，1.4 §6.6；不用 integration head）
+  // 实测（2026-11-16 v2.3.0，M0 追加）：create 的起始 ref 走 branch 参数（"Starting ref"）；
+  // from 参数实测语义为源目录——传 sha/分支名一律 DirectoryUnavailableError。
+  // 幂等（原则 5）：平台对重名 worktree 自动改名（实测会产生 name-2..name-N 漂移）——
+  // create 前先 list 同名复用，杜绝重试期间的目录增殖。
   const forkSha = currentSha(kernel.opts.canonical, 'HEAD') ?? '';
-  let worktreeDir: string;
+  const wtName = `dcae-${task.id.toLowerCase()}-a${t.attempt}`;
+  let worktreeDir: string | undefined;
   try {
-    const wt = await kernel.host().createWorktree(kernel.opts.projectID, `dcae-${task.id.toLowerCase()}-a${t.attempt}`, {
-      from: forkSha,
-    });
-    worktreeDir = wt.directory;
-  } catch (e) {
-    return { ok: false, detail: `worktree 创建失败：${String(e)}` };
+    const existing = (await kernel.host().listWorktrees(kernel.opts.projectID)) ?? [];
+    const hit = existing.find((w) => normalizeWt(w.directory).endsWith('/' + wtName));
+    if (hit && existsSync(hit.directory)) {
+      worktreeDir = hit.directory;
+    } else if (hit) {
+      // 死注册（物理目录已删）：清注册后重建
+      try { await kernel.host().removeWorktree(kernel.opts.projectID, hit.directory, true); } catch { /* 尽力 */ }
+    }
+  } catch { /* list 不可用：直接 create（平台会自建） */ }
+  if (!worktreeDir) {
+    try {
+      const wt = await kernel.host().createWorktree(kernel.opts.projectID, wtName, {
+        branch: forkSha,
+      });
+      worktreeDir = wt.directory;
+    } catch (e) {
+      return { ok: false, detail: `worktree 创建失败：${String(e)}` };
+    }
+  }
+  if (!worktreeDir) {
+    try {
+      const wt = await kernel.host().createWorktree(kernel.opts.projectID, wtName, {
+        branch: forkSha,
+      });
+      worktreeDir = wt.directory;
+    } catch (e) {
+      return { ok: false, detail: `worktree 创建失败：${String(e)}` };
+    }
   }
   if (!worktreeDir || !existsSync(worktreeDir)) return { ok: false, detail: `worktree 目录无效：${worktreeDir}` };
 
@@ -71,13 +98,16 @@ async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): Promise<
   });
 
   // 4. 原子创建会话（permissions 与 metadata 创建时一次给入；location 仅 {directory}）
+  // 模型：config.model（provider/id）显式传给会话——宿主默认模型可能是 free 限额模型（实测教训）。
   const sid = sessionId();
+  const modelRef = parseModelRef(kernel.config.model);
   try {
     await kernel.host().createSession({
       id: sid,
       directory: worktreeDir,
       agent: `dcae-${role}`,
       title: `${task.id} · ${role} · attempt ${t.attempt}`,
+      ...(modelRef ? { model: modelRef } : {}),
       permissions: rules,
       metadata: { task: task.id, attempt: t.attempt, role, kernelId: kernel.kernelId },
     });
@@ -125,6 +155,19 @@ async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): Promise<
   if (!ev) return { ok: false, detail: '事件追加失败（租约丢失）' };
   kernel.log.info('dispatch', 'dispatch 完成', { task: task.id, role, sessionId: sid, ms: Date.now() - t0 });
   return { ok: true, sessionId: sid };
+}
+
+/** 解析 `provider/id` 模型引用；空/非法返回 undefined。 */
+function parseModelRef(ref: string | undefined): { id: string; providerID: string; variant?: string } | undefined {
+  if (!ref || !ref.includes('/')) return undefined;
+  const i = ref.indexOf('/');
+  const providerID = ref.slice(0, i);
+  const id = ref.slice(i + 1);
+  return providerID && id ? { id, providerID } : undefined;
+}
+
+function normalizeWt(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '');
 }
 
 function admissionText(task: TaskDef, role: Role, attempt: number): string {

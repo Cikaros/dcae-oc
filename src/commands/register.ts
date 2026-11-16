@@ -18,9 +18,10 @@ export function registerCommands(ctx: Ctx, kernel: Kernel): void {
     }).synthetic({ sessionID, id: 'msg_' + ulid(), text, description: 'dcae' });
   };
 
-  const decide = (kind: string, id: string, payload: Record<string, unknown>, sessionID: string, ack: string): Promise<void> =>
-    enqueue(kernel.dcaeDir, 'decision', id, { ...payload, sessionID })
-      .then(() => synthetic(sessionID, `${ack}（已入决策邮箱，≤5s 生效）`));
+  const decide = async (kind: string, id: string, payload: Record<string, unknown>, sessionID: string, ack: string): Promise<void> => {
+    enqueue(kernel.dcaeDir, 'decision', id, { ...payload, sessionID });
+    await synthetic(sessionID, `${ack}（已入决策邮箱，≤5s 生效）`);
+  };
 
   const cmds = [
     {
@@ -91,7 +92,8 @@ export function registerCommands(ctx: Ctx, kernel: Kernel): void {
     },
   ];
 
-  ctx.command.transform((editor: { add: (d: unknown) => void }) => {
-    for (const c of cmds) editor.add(c);
+  ctx.command.transform((editor) => {
+    const ed = editor as unknown as { add: (d: unknown) => void };
+    for (const c of cmds) ed.add(c);
   });
 }

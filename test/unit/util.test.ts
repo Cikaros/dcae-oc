@@ -73,12 +73,12 @@ describe('ulid / 会话 ID / 消息 ID', () => {
       prev = u;
     }
   });
-  test('sessionId 形态 ses_ + 26 [0-9a-z]', () => {
+  test('sessionId 完整形态 ses_ + 26 字母数字（降序 ULID，实测平台要求前缀）', () => {
     const s = sessionId();
-    expect(s).toMatch(/^[0-9a-z]{26}$/);
+    expect(s).toMatch(/^ses_[A-Z0-9]{26}$/);
   });
   test('messageId ^msg_', () => {
-    expect(messageId()).toMatch(/^msg_[0-9a-z]{26}$/);
+    expect(messageId()).toMatch(/^msg_[A-Z0-9]{26}$/);
   });
 });
 

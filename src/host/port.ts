@@ -122,8 +122,13 @@ export interface HostPort {
     raw?: unknown;
   }>;
 
-  /** [D] create 输入 {projectID, from?, branch?, directory?, name?}。 */
+  /** [D] create 输入 {projectID, from?, branch?, directory?, name?}。
+   * 实测：branch = 起始 ref；from = 源目录语义（传非目录 → DirectoryUnavailableError）。
+   * 平台对重名自动改名——幂等复用请先 listWorktrees。 */
   createWorktree(projectID: string, name: string, o?: { from?: string; branch?: string }): Promise<{ directory: string }>;
+
+  /** 实测补充：list 输入 {projectID}（返回含 canonical root 与全部 worktree）。 */
+  listWorktrees(projectID: string): Promise<{ directory: string; type?: 'root' | 'worktree' }[]>;
 
   /** [D] 三参数全必填。 */
   removeWorktree(projectID: string, directory: string, force: boolean): Promise<void>;

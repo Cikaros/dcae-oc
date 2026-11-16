@@ -105,7 +105,7 @@ export default Plugin.define({
       kernel.detachInstance(instanceId);
       handle.release(); // R3：最后一个实例 release 停内核
     };
-    kernel.log.info('index', '实例 setup 完成', { instanceId, ms: Date.now() - t0, canonicalInstance: isCanonical });
+    kernel.log.info('index', '实例 setup 完成', { instanceId, ms: Date.now() - t0, canonicalInstance: isCanonical, options: options, rawOptionsType: typeof ctx.options, rawOptions: (ctx.options as unknown) ?? null });
     return cleanup;
   },
 });

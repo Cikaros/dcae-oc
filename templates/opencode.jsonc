@@ -3,6 +3,9 @@
   "plugins": [
     {{PLUGIN_REF}}
   ],
+  "dcae": {
+    "model": {{DCAE_MODEL}}
+  },
   "permissions": [
     { "action": "shell", "resource": "git push *", "effect": "deny" },
     { "action": "shell", "resource": "rm -rf *", "effect": "deny" },

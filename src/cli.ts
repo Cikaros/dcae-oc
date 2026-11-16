@@ -65,6 +65,7 @@ async function main(): Promise<number> {
       const r = initProject(root, {
         testRunner: arg(argv, '--runner'),
         pluginRef: arg(argv, '--plugin'),
+        model: arg(argv, '--model'),
       });
       console.log('已写入:', r.written.join(', ') || '（无）');
       if (r.skipped.length > 0) console.log('已跳过（存在）:', r.skipped.join(', '));

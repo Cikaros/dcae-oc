@@ -3,6 +3,8 @@
  * Permission.Ruleset.json / Rule：{action, resource, effect}，additionalProperties: false。
  */
 import { z } from 'zod';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const EffectSchema = z.enum(['allow', 'deny', 'ask']);
 export type Effect = z.infer<typeof EffectSchema>;
@@ -37,7 +39,29 @@ export const KernelConfigSchema = z.object({
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   /** OpenCode 服务器 HTTP 基址（进程内插件访问 REST 兜底用；契约测试注入）。 */
   serverUrl: z.string().optional(),
+  /** 内核自有会话的模型（`provider/id` 形态，如 scnet/DeepSeek-V4.1-Flash）；不设则用宿主默认。 */
+  model: z.string().optional(),
 });
 export type KernelConfig = z.infer<typeof KernelConfigSchema>;
 
 export const DEFAULT_CONFIG: KernelConfig = KernelConfigSchema.parse({});
+
+/** 读目标项目 opencode(.json/.jsonc) 顶层 `dcae` 键（实测 ctx.options 不可用后的可靠通道）。 */
+export function readProjectDcaeConfig(canonical: string): Partial<KernelConfig> | null {
+  for (const name of ['opencode.json', 'opencode.jsonc'] as const) {
+    const p = join(canonical, name);
+    if (!existsSync(p)) continue;
+    try {
+      const cfg = JSON.parse(readFileSync(p, 'utf8'));
+      if (cfg?.dcae && typeof cfg.dcae === 'object') return cfg.dcae as Partial<KernelConfig>;
+      return null;
+    } catch {
+      try {
+        const text = readFileSync(p, 'utf8').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const cfg = JSON.parse(text);
+        if (cfg?.dcae && typeof cfg.dcae === 'object') return cfg.dcae as Partial<KernelConfig>;
+      } catch { /* 尽力 */ }
+    }
+  }
+  return null;
+}

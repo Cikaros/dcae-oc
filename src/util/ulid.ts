@@ -45,13 +45,13 @@ export function ulid(now: number = Date.now()): string {
   return encodeTime(now) + lastRandom;
 }
 
-/** 26 字符小写字母数字（会话 ID 格式：`ses_` + 26 [0-9a-z]，1.4 §2 [S] session-id.ts）。
- * Crockford base32 小写化后即为 [0-9a-z]（无 I/L/O/U），26 字符恰好。 */
+/** 会话 ID 完整形态（`ses_` + 26 字母数字，1.4 §2 [S] session-id.ts：降序 ULID 风格）。
+ * 实测（2026-11-16）：平台校验要求 "ses" 前缀——此前小写无前缀形态被拒。 */
 export function sessionId(): string {
-  return ulid().toLowerCase();
+  return 'ses_' + ulid();
 }
 
 /** OpenCode 消息 ID 形态（`^msg_`，1.4 §2 [A]）。 */
 export function messageId(): string {
-  return 'msg_' + sessionId();
+  return 'msg_' + ulid();
 }

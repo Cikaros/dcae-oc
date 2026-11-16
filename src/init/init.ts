@@ -18,6 +18,8 @@ export interface InitOptions {
   pluginRef?: string;
   /** 测试运行器（gates.yaml 的 argv[0]）。 */
   testRunner?: string;
+  /** 内核会话模型（provider/id；写入 opencode.json 的 dcae.model——实测 ctx.options 通道不可用）。 */
+  model?: string;
   dryRun?: boolean;
 }
 
@@ -27,6 +29,7 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
   const skipped: string[] = [];
   const pluginRef = opts.pluginRef ?? root;
   const runner = opts.testRunner ?? 'bun';
+  const model = opts.model ?? 'scnet/DeepSeek-V4.1-Flash';
 
   const put = (rel: string, content: string): void => {
     const p = join(target, rel);
@@ -58,9 +61,9 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
   }
 
   // 2. opencode.json（纯 JSON：实测本平台 jsonc 中文注释解析失败——2026-11-16 M0 实测；
-  //    插件引用 + V2 有序权限规则数组）
+  //    插件引用 + dcae.model + V2 有序权限规则数组）
   const tpl = readFileSync(join(root, 'templates', 'opencode.jsonc'), 'utf8');
-  put('opencode.json', tpl.replace('{{PLUGIN_REF}}', JSON.stringify(pluginRef)));
+  put('opencode.json', tpl.replace('{{PLUGIN_REF}}', JSON.stringify(pluginRef)).replace('{{DCAE_MODEL}}', JSON.stringify(model)));
 
   // 3. gates.yaml（人类所有）
   put('gates.yaml', readFileSync(join(root, 'templates', 'gates.yaml'), 'utf8').replaceAll('{{TEST_RUNNER}}', runner));
