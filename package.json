@@ -1,0 +1,32 @@
+{
+  "name": "dcae-oc",
+  "version": "0.1.0",
+  "description": "DCAE-OC deterministic kernel as an OpenCode V2 server plugin (1.4 spec) + dcae CLI",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "dcae": "./src/cli.ts"
+  },
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test/unit",
+    "contract": "bun test/contract/run.ts"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.3.0"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.3.0",
+    "typescript": "^5.7.0",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.0.0"
+  }
+}

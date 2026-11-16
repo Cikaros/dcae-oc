@@ -1,0 +1,192 @@
+[
+  {
+    "case": "T-1",
+    "name": "会话创建字段 + 原子施加 + workspaceID 忽略断言",
+    "ok": true,
+    "detail": {
+      "createStatus": 200,
+      "id": "ses_mwj7pnrot10000000000000000",
+      "metadata": {
+        "task": "T-CONTRACT",
+        "attempt": 1
+      },
+      "permissions": [
+        {
+          "action": "dcae.contract",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ],
+      "permissionsAtomic": true,
+      "adoptSameId": true,
+      "negStatus": 200,
+      "workspaceIDIgnored": true
+    },
+    "note": "服务器对未知字段宽松接受（OpenAPI additionalProperties:false 为契约层约束）；适配器从不发送 workspaceID（P0-3 语义不受影响）"
+  },
+  {
+    "case": "T-2",
+    "name": "switchAgent 语义",
+    "ok": true,
+    "detail": {
+      "switchStatus": 204,
+      "agentAfter": "dcae-reviewer"
+    }
+  },
+  {
+    "case": "T-10",
+    "name": "会话 ID 采纳 + 跨 location 同 ID 观察",
+    "ok": true,
+    "detail": {
+      "a": 200,
+      "b": 200,
+      "bAdopted": true,
+      "note": "跨项目同 ID 的完整复现需双服务器进程；此处记录同服务器跨 location 行为"
+    }
+  },
+  {
+    "case": "T-14",
+    "name": "saved approvals 审计端点",
+    "ok": true,
+    "detail": {
+      "savedStatus": 200,
+      "savedBody": "[object Object]"
+    }
+  },
+  {
+    "case": "T-11",
+    "name": "事件方向（外部流半）",
+    "ok": true,
+    "detail": {
+      "note": "外部流应见多 location 事件；进程内半见 RPC contract T-11",
+      "eventStreamStatus": 200,
+      "contentType": "text/event-stream"
+    }
+  },
+  {
+    "case": "T-3",
+    "name": "签名锁定",
+    "ok": true,
+    "detail": {
+      "tool.transform": "function",
+      "command.transform": "function",
+      "agent": "present",
+      "permission.assert": "function",
+      "permission.hook": "missing",
+      "event.subscribe": "function",
+      "session.create": "function",
+      "session.prompt": "function",
+      "session.wait": "function",
+      "rpc.register": "function",
+      "worktree.create": "function",
+      "worktree.remove": "function",
+      "worktree.list": "function",
+      "worktree.refresh": "function",
+      "location.project.id": "string",
+      "location.project.canonical": "string"
+    }
+  },
+  {
+    "case": "T-4",
+    "name": "worktree 签名",
+    "ok": true,
+    "detail": {
+      "projectID": "e38d5ef16da41b35cfa333e291fd146a340e7c4d",
+      "create": {
+        "directory": "C:\\Users\\Cikaros\\.local\\share\\opencode\\worktree\\e38d5e\\dcae-contract-1794830458599"
+      },
+      "listCount": 2,
+      "remove": "ok",
+      "refresh": "ok"
+    }
+  },
+  {
+    "case": "T-5",
+    "name": "工具权限粒度",
+    "ok": true,
+    "detail": {
+      "session": "ses_e1bc49f69ffeExcEC0C66hQ672",
+      "assertWithDenyRule": "denied: Tool.Error: Permission denied: dcae.probe"
+    }
+  },
+  {
+    "case": "T-6",
+    "name": "evaluate 钩子",
+    "ok": true,
+    "detail": {
+      "resourcesReadonly": true,
+      "askOutcome": "denied: Tool.Error: contract-deny",
+      "hookFiredForDeny": false,
+      "hookFiredForAsk": true,
+      "messageObserved": "contract-deny"
+    }
+  },
+  {
+    "case": "T-7",
+    "name": "规则顺序",
+    "ok": true,
+    "detail": {
+      "broad": "allowed",
+      "narrow": "denied: Tool.Error: Permission denied: dcae.contract.order"
+    }
+  },
+  {
+    "case": "T-8",
+    "name": "通配符语义",
+    "ok": true,
+    "detail": {
+      "starCrossesSlash": true,
+      "questionSingle": true,
+      "globstarBehavior": "denied: Tool.Error: Permission denied: dcae.w",
+      "anchored": true,
+      "shellTrailingStar": "denied: Tool.Error: Permission denied: shell"
+    }
+  },
+  {
+    "case": "T-9",
+    "name": "entries 约束",
+    "ok": true,
+    "detail": {
+      "badKeyRejected": true,
+      "oversizeRejected": true
+    }
+  },
+  {
+    "case": "T-11",
+    "name": "事件方向（进程内半）",
+    "ok": true,
+    "detail": {
+      "subscription": "function",
+      "ambientLocation": "C:\\Users\\Cikaros\\AppData\\Local\\Temp\\dcae-contract-YFcbHx"
+    },
+    "note": "跨 location 半由外部 runner 判定"
+  },
+  {
+    "case": "T-13",
+    "name": "T-iso 读隔离",
+    "ok": true,
+    "detail": {
+      "cases": {
+        "absolute": "denied: Tool.Error: Permission denied: read",
+        "relativeForm": "allowed",
+        "traversal": "denied: Tool.Error: Permission denied: read"
+      },
+      "absoluteWorks": true,
+      "traversalWorks": true
+    }
+  },
+  {
+    "case": "T-9",
+    "name": "压缩后 epoch 推进（[X] 运行时半）",
+    "ok": "INCONCLUSIVE",
+    "detail": "需真实压缩（LLM）",
+    "note": "--with-model 开启"
+  },
+  {
+    "case": "T-12",
+    "name": "Idle outcome 过滤（[X] LLM 半）",
+    "ok": "INCONCLUSIVE",
+    "detail": "需真实会话 idle 标记（LLM）",
+    "note": "--with-model 开启"
+  }
+]

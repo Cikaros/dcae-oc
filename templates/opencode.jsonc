@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {{PLUGIN_REF}}
+  ],
+  "permissions": [
+    { "action": "shell", "resource": "git push *", "effect": "deny" },
+    { "action": "shell", "resource": "rm -rf *", "effect": "deny" },
+    { "action": "external_directory", "resource": "*", "effect": "deny" }
+  ],
+  "compaction": { "auto": true },
+  "agents": {}
+}

@@ -1,0 +1,14 @@
+# DCAE-OC 门禁配置（人类所有；1.4 §6.3）
+schema_version: 1
+runner: host
+commands:
+  test:      { argv: ['{{TEST_RUNNER}}', 'test'], arg_globs: ['src/**', 'acceptance/**'] }
+  typecheck: { argv: ['{{TEST_RUNNER}}', 'run', 'typecheck'] }
+  lint:      { argv: ['{{TEST_RUNNER}}', 'run', 'lint'] }
+pipeline:
+  - [typecheck]
+  - test
+global: []
+invariants_run: always
+probe_argv0: []          # 一次性只读探针的 argv[0] 白名单；空 = 探针关闭
+output_cap_kb: 256
