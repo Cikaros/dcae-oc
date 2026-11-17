@@ -220,9 +220,10 @@ export async function runGatePipeline(kernel: Kernel, taskId: string, attempt: n
         failed.length > 0 ? `门禁失败：${failed.join('；')}` : '',
         outcome.scopeViolations.length > 0 ? `范围外写入：${outcome.scopeViolations.join(', ')}（只可写 ${def.scope.write.join(', ')}）` : '',
       ].filter(Boolean).join('\n');
-      try {
-        await kernel.hostForSession(t.sessionId).prompt(t.sessionId, `门禁未通过（不消耗 attempt）：\n${detail}\n修正后重新 dcae_submit。`, { messageId: `msg_${Date.now().toString(36)}gf`, delivery: 'queue' });
-      } catch { /* 会话由等待器/提醒兜底 */ }
+    try {
+      // fire-and-forget（prompt 挂起不得堵死门禁效果层——30s 护栏在 HostPort.prompt 内）
+      void kernel.hostForSession(t.sessionId).prompt(t.sessionId, `门禁未通过（不消耗 attempt）：\n${detail}\n修正后重新 dcae_submit。`, { messageId: `msg_${Date.now().toString(36)}gf`, delivery: 'queue' }).catch(() => { });
+    } catch { /* 会话由等待器/提醒兜底 */ }
     }
     return outcome;
   }

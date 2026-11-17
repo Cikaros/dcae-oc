@@ -210,7 +210,10 @@ export class Scheduler {
       ? '已完成请 dcae_test_submit 提交；受阻请 dcae_question；未完成请继续。'
       : '已完成请 dcae_submit；受阻请 dcae_question；未完成请继续。';
     try {
-      await this.kernel.hostForSession(sessionId).prompt(sessionId, text, { messageId: `msg_${Date.now().toString(36)}${taskId}`, delivery: 'queue' });
+      // fire-and-forget（prompt 挂起不得堵死等待循环——30s 护栏在 HostPort.prompt 内）
+      void this.kernel.hostForSession(sessionId).prompt(sessionId, text, { messageId: `msg_${Date.now().toString(36)}${taskId}`, delivery: 'queue' }).catch((e) => {
+        this.kernel.log.warn('scheduler', '提醒注入失败', { taskId, error: String(e) });
+      });
     } catch (e) {
       this.kernel.log.warn('scheduler', '提醒注入失败（等待器将在下轮重试）', { taskId, error: String(e) });
     }

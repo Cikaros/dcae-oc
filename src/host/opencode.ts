@@ -124,12 +124,17 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
     },
 
     async prompt(id, text, o) {
-      const out = await ctx.session.prompt({
-        sessionID: id,
-        id: o.messageId,
-        text,
-        delivery: o.delivery ?? 'steer',
-      } as any);
+      // 30s 护栏（实测：向已 idle 会话注入 queue 消息可能无限挂起，堵死事件循环——
+      // 调用方（提醒/门禁提示/返工通知）全部 fire-and-forget，挂起只损失该次注入）
+      const out = await Promise.race([
+        ctx.session.prompt({
+          sessionID: id,
+          id: o.messageId,
+          text,
+          delivery: o.delivery ?? 'steer',
+        } as any),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('prompt-timeout(30s)')), 30_000)),
+      ]);
       return { messageId: (out as any)?.id ?? o.messageId };
     },
 
