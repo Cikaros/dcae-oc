@@ -51,6 +51,9 @@ export class Projection {
       }
       return;
     }
+    // 幽灵事件防护（实测缺陷已复现）：空 task id 的事件（历史/外来会话的 question/question 等）不得
+    // 在投影中建立任务——否则 dcae status 出现空行、收件箱 ref.task="" 无法恢复任何任务。
+    if (!e.task) return;
     const t = this.task(e.task);
     switch (e.reason) {
       case 'plan-approved':

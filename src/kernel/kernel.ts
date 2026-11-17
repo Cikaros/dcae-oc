@@ -298,6 +298,19 @@ export class Kernel {
     const { key, seq, base } = this.computeKey(req);
     const key0 = keyOverride ?? key;
     if (this.projection.seenKeys.has(key0)) return { ok: true, queued: 'duplicate', detail: `重复投递（键 ${key0}）` };
+
+    // 会话归属校验（fail-closed；仅状态变更类工具，decision 走独立通道）。
+    // 实测缺陷（已复现）：来自历史/外来会话的 dcae_question 因 taskOf() 反查为空串而落到 task=''，
+    // 生成幽灵空任务（task:""）与 ref.task="" 的收件箱项，污染投影、且该决策无法恢复任何任务。
+    // 正确语义：任何 submit/test_submit/question/dcp 必须来自投影中该任务登记的会话。
+    if (req.kind !== 'decision') {
+      const owner = this.taskOfSession(req.session);
+      if (!owner || owner !== req.task) {
+        this.log.warn('kernel', '拒绝外来会话请求（归属不符）', { kind: req.kind, task: req.task || '(空)', session: req.session, owner: owner ?? '(无)' });
+        return { ok: false, detail: `会话不属于任务 ${req.task || '(空)'}（归属 ${owner ?? '无'}）——拒绝` };
+      }
+    }
+
     const t = this.projection.task(req.task);
 
     switch (req.kind) {

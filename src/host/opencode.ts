@@ -158,6 +158,10 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
           ctx.session.get({ sessionID: id } as any) as Promise<any>,
         );
         const outcome = (raw as any)?.outcome;
+        // 实测（2026-11-17）：干净结束的会话 outcome=succeeded（进程内 Session.Info 权威）。
+        // 早期轮询版误删该分支，只认 failed/interrupted，导致正常 idle 永不被识别、
+        // REVIEW 闭环空等到 30 分钟超时升级（根因，已复现）。
+        if (outcome === 'succeeded') return 'idle';
         if (outcome === 'failed') return 'failed';
         if (outcome === 'interrupted') return 'interrupted';
         await new Promise((r) => setTimeout(r, 5_000));

@@ -142,6 +142,12 @@ describe('投影重建（重启安全：事件重放 + 快照）', () => {
     p.apply({ seq: 2, epoch: 1, ts: '', task: 'T-1', from: 'RUNNING', to: 'RUNNING', reason: 'idle-nudge', actor: 'kernel' });
     expect(p.task('T-1').idleNudges).toBe(2);
   });
+  test('空 task id 不计入投影（幽灵任务防护；实测缺陷回归）', () => {
+    const p = new Projection();
+    p.apply({ seq: 1, epoch: 1, ts: '', task: '', from: 'PENDING', to: 'BLOCKED', reason: 'question', actor: 'kernel', data: { inboxId: 'INBOX-000001' } });
+    expect(p.tasks.size).toBe(0);
+    expect(p.tasks.has('')).toBe(false);
+  });
 });
 
 function readdirSafe(d: string): string[] {

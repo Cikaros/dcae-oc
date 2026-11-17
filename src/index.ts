@@ -9,6 +9,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { acquireKernel, peekKernel } from './kernel/registry.ts';
 import { Kernel } from './kernel/kernel.ts';
+import { parseIdleEvent } from './kernel/idle-signal.ts';
 import { KernelConfigSchema } from './schema/common.ts';
 import { registerTools } from './tools/register.ts';
 import { registerPermissionHook } from './hooks/permission.ts';
@@ -106,14 +107,15 @@ export default Plugin.define({
       try {
         for await (const ev of unsubscribe) {
           // 事件消费护栏（假死定位探针：事件循环停止时最后一条记录即堵点）
-          if (hangProbeMod) hangProbeMod.probeLog(canonical, `event ${String((ev as any)?.type ?? '?')}`);
+          if (hangProbeMod) hangProbeMod.hangProbe.probeLog(canonical, `event ${String((ev as any)?.type ?? '?')}`);
           kernel.wake(); // 事件只做唤醒；状态推进由有界轮询 + 会话日志重放为权威（R5）
-          // session.idle 事件登记（awaitIdle 的进程内 idle 信号；V2Event 93 项含 session.idle [A]）
-          const e = ev as unknown as { type?: string; properties?: { sessionID?: string; outcome?: string }; data?: { properties?: { sessionID?: string; outcome?: string } } };
-          if (typeof e?.type === 'string' && e.type.endsWith('.idle')) {
-            const d = e.properties ?? e.data?.properties ?? (e as unknown as { sessionID?: string });
-            if (typeof d?.sessionID === 'string') kernel.noteSessionIdle(d.sessionID, d.outcome);
-          }
+          // 会话 idle/终态事件登记（awaitIdle 的进程内信号）。
+          // 实测（2026-11-17）：平台事件负载为 { type, data: { sessionID, ... } }。
+          // 早期实现误读 e.properties/e.data.properties，idle 信号从未生效——REVIEW 闭环只能等满
+          // 30 分钟窗口后超时升级为 BLOCKED（根因，已复现）。解析抽为纯函数（kernel/idle-signal.ts）
+          // 并按平台 schema 逐字取值，回归测试见 test/unit/idle-signal.test.ts。
+          const parsed = parseIdleEvent(ev);
+          if (parsed) kernel.noteSessionIdle(parsed.sessionID, parsed.signal);
         }
       } catch {
         // 事件流易失（慢消费者溢出即断 [A]）：唤醒循环由心跳兜底
