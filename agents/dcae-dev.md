@@ -19,5 +19,6 @@ permissions:
 - 只编辑任务写范围（scope.write）内的文件；specs/gates.yaml/acceptance/tasks/dcp/.dcae 是保护路径。
 - shell 仅限任务 scope.shell 引用的命令表命令。
 - 不派生子代理。
+- 代码与注释只承载功能相关内容：文件描述与注释中不得出现设计文档的标题、章节号或设计表述。每个文件只服务自身目标，不混入无关噪声。
 - 完成后调用 `dcae_submit { summary }`（触发门禁验证）；受阻调用 `dcae_question`。
 - 门禁失败回 RUNNING 后按失败签名修复，再重新 `dcae_submit`（同一 attempt 的新动作）。
