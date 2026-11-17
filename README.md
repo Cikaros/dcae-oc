@@ -4,7 +4,7 @@
 
 DCAE-OC 是一个运行在 OpenCode V2 服务器内的确定性内核插件：它把已批准的计划变成任务 DAG，在隔离的 git worktree 中以最小权限会话运行每个任务，用门禁与证据验收工作，经受控合并列车集成，并把所有判断性决策送入人类收件箱。LLM 会话负责规划、实现与审查；**内核掌管状态、范围、证据与排序**。
 
-> 设计规范：`E:\Code\DCAE-OC\`（1.4 版设计稿 + 项目设计/架构设计 v1.0 + 平台调研存档）
+> 实现依据：DCAE-OC 1.4 设计稿 + 项目设计/架构设计 v1.0（代码注释中以 `1.4 §x`、`架构设计 §x` 标注对应章节）
 
 ## 适用场景
 
@@ -24,7 +24,7 @@ opencode plugin add dcae-oc
 # 方式 B：git 仓库
 opencode plugin add github:Cikaros/dcae-oc
 # 方式 C：本地目录（开发态）
-# 目标项目 opencode.json → "plugins": ["E:/Code/DCAE-OC/plugin"]
+# 目标项目 opencode.json → "plugins": ["<path-to-plugin>"]
 ```
 
 ## 使用流程（五步）
@@ -34,7 +34,7 @@ opencode plugin add github:Cikaros/dcae-oc
 ```sh
 cd <目标项目>
 npx dcae-oc init --model <provider/model> --plugin <插件引用>
-# 例：npx dcae-oc init . --model scnet/DeepSeek-V4.1-Flash --plugin E:/Code/DCAE-OC/plugin
+# 例：npx dcae-oc init . --model <provider/model> --plugin <path-to-plugin>
 git add -A && git commit -m "dcae init"
 ```
 
@@ -100,16 +100,12 @@ dcae promote [--branch main]   # 重跑全局门禁后把 integration fast-forwa
 | `promote` | — | integration → 主分支 |
 | `verify` | — | 无状态只读核查（CI 可用） |
 
-## MCP Server 模式（wir-mcp 形态）
-
-DCAE-OC 管控的项目可以交付 MCP server 类产物——本仓的姊妹项目 `wir-mcp`（由 DCAE-OC 全链管控实现）即为一例：它把 WIR/2.0 文档协议暴露为 MCP 工具。其门禁（`bun test`）与审查闭环由内核执行，开发会话只负责实现。
-
 ## 真实验证记录（2026-11-16/17，OpenCode v2.3.0）
 
 - M0 平台契约：**14 PASS / 0 FAIL / 2 LLM 依赖待补**（`test/contract/results/2026-11-17-snapshot.md`）
 - 单元测试 **85/85**；`tsc --noEmit` 全绿；安装态包（npm pack → 独立 `npm i`）加载验证通过
 - 安装态全链 e2e：全新项目经安装态插件包推进至 **MERGED**，且**审查闭环零人工**（无 retry / decision 事件；`test/contract/results/2026-11-17-real-scenario-test.md`）
-- 真实项目 e2e（`wir-mcp`，双任务 DAG）：**T-WIR-001 + T-WIR-002 双 MERGED**（真实 DeepSeek 会话实现 + 门禁 + 审查 + 合并列车），事件链完整留痕 `.dcae/state/events.jsonl`
+- 真实多任务项目 e2e：双任务 DAG（含 deps 依赖）均推进至 **MERGED**（真实 LLM 会话实现 + 门禁 + 审查 + 合并列车），事件链完整留痕 `.dcae/state/events.jsonl`
 - 已知限制与排障见 `test/contract/results/2026-11-17-review.md` 与 `2026-11-17-real-scenario-test.md`
 
 ## 许可

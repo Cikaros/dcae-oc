@@ -103,8 +103,15 @@ async function main(): Promise<number> {
     mkdirSync(resultsDir, { recursive: true });
     const md = renderResults(results, String(process.env.DCAE_SNAPSHOT_VERSION ?? 'v2.3.0'), stamp);
     const mdFile = join(resultsDir, `${stamp}-snapshot.md`);
-    writeFileSync(mdFile, md);
-    writeFileSync(join(resultsDir, `${stamp}-results.json`), JSON.stringify(results, null, 2));
+    // 脱敏：存档结果不得含本机绝对路径（sandbox/tmp/worktree 一律泛化）。
+    // 通用规则：任何盘符绝对路径 → <abs>；sandbox 路径额外归一为 <sandbox>。
+    const redact = (s: string): string =>
+      s
+        .split(sandbox.replace(/\\/g, '/')).join('<sandbox>')
+        .split(sandbox).join('<sandbox>')
+        .replace(/[A-Za-z]:[\\/]{1,2}[^\s"',\]]+/g, '<abs>');
+    writeFileSync(mdFile, redact(md));
+    writeFileSync(join(resultsDir, `${stamp}-results.json`), redact(JSON.stringify(results, null, 2)));
     console.log(`\n${md}`);
     console.log(`[harness] 结果已存档: ${mdFile}`);
     child.kill('SIGTERM');

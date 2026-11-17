@@ -63,9 +63,9 @@ function listFiles(dir: string): string[] {
 }
 
 async function main(): Promise<number> {
-  // 0. 清进程 + 旧目录
-  spawnSync('taskkill', ['/F', '/IM', 'opencode.exe'], { shell: false, timeout: 30_000 });
-  await new Promise((r) => setTimeout(r, 1500));
+  // 0. 清旧目录
+  //    注意：不使用全局 `taskkill /IM opencode.exe`——那会误杀调用者所在的服务进程。
+  //    本驱动只终止自己 spawn 的 serve 子进程（见下方 child.kill）。
   rmSync(PROJ, { recursive: true, force: true });
   mkdirSync(PROJ, { recursive: true });
 

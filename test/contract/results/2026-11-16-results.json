@@ -93,7 +93,7 @@
     "detail": {
       "projectID": "820f7a0f716a9ccbe136e7c5fb109da852c5ec23",
       "create": {
-        "directory": "C:\\Users\\Cikaros\\.local\\share\\opencode\\worktree\\820f7a\\dcae-contract-1794848041477"
+        "directory": "<worktree>\\dcae-contract"
       },
       "listCount": 2,
       "remove": "ok",
@@ -157,7 +157,7 @@
     "ok": true,
     "detail": {
       "subscription": "function",
-      "ambientLocation": "C:\\Users\\Cikaros\\AppData\\Local\\Temp\\dcae-contract-JLuJ08"
+      "ambientLocation": "<tmp>\\dcae-contract"
     },
     "note": "跨 location 半由外部 runner 判定"
   },
