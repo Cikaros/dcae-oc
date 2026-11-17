@@ -100,9 +100,12 @@ export default Plugin.define({
       kernel.scheduler.start();
     });
     const unsubscribe = ctx.event.subscribe();
+    const hangProbeMod = process.env.DCAE_PROBE === '1' ? await import('./diagnostics/hang-probe.ts') : null;
     void (async () => {
       try {
         for await (const ev of unsubscribe) {
+          // 事件消费护栏（假死定位探针：事件循环停止时最后一条记录即堵点）
+          if (hangProbeMod) hangProbeMod.probeLog(canonical, `event ${String((ev as any)?.type ?? '?')}`);
           kernel.wake(); // 事件只做唤醒；状态推进由有界轮询 + 会话日志重放为权威（R5）
           // session.idle 事件登记（awaitIdle 的进程内 idle 信号；V2Event 93 项含 session.idle [A]）
           const e = ev as unknown as { type?: string; properties?: { sessionID?: string; outcome?: string }; data?: { properties?: { sessionID?: string; outcome?: string } } };

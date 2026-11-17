@@ -139,6 +139,7 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
       // 终态区分 = ctx.session.get().outcome（failed/interrupted 有值，正常 idle undefined）。
       const deadline = Date.now() + o.timeoutMs;
       const since = Date.now();
+      const { hangProbe } = await import('../diagnostics/hang-probe.ts');
       while (Date.now() < deadline) {
         if (o.signal.aborted) return 'timeout';
         // 1. 事件信号（实例事件流）
@@ -146,13 +147,14 @@ export function createOpenCodeHost(input: AdapterCtx): HostPort {
         if (evOutcome === 'idle') return 'idle';
         if (evOutcome === 'failed') return 'failed';
         if (evOutcome === 'interrupted') return 'interrupted';
-        // 2. 终态信号（进程内 get）
-        try {
-          const raw: any = await ctx.session.get({ sessionID: id });
-          const outcome = raw?.outcome;
-          if (outcome === 'failed') return 'failed';
-          if (outcome === 'interrupted') return 'interrupted';
-        } catch { /* 会话查询失败：继续轮询 */ }
+        // 2. 终态信号（进程内 get；8s 护栏——挂起即记录并继续，假死定位探针）
+        const raw = await hangProbe.withTimeout(
+          ctx.location.project.canonical, `session.get(${id.slice(0, 20)})`,
+          ctx.session.get({ sessionID: id } as any) as Promise<any>,
+        );
+        const outcome = (raw as any)?.outcome;
+        if (outcome === 'failed') return 'failed';
+        if (outcome === 'interrupted') return 'interrupted';
         await new Promise((r) => setTimeout(r, 5_000));
       }
       return 'timeout';
