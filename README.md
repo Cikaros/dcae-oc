@@ -21,11 +21,15 @@ DCAE-OC 是一个运行在 OpenCode V2 服务器内的确定性内核插件：�
 ```sh
 # 方式 A：npm 发布后（推荐）
 opencode plugin add dcae-oc
-# 方式 B：git 仓库
-opencode plugin add github:Cikaros/dcae-oc
+# 方式 B：git 仓库（HTTPS 不可达时用 SSH）
+opencode plugin add git+ssh://git@github.com/Cikaros/dcae-oc.git#0.1.1
 # 方式 C：本地目录（开发态）
 # 目标项目 opencode.json → "plugins": ["<path-to-plugin>"]
 ```
+
+> **全局安装是安全的**：插件只对**探测到的 DCAE 项目**激活（`.dcae/`、`gates.yaml`、`tasks/*.yaml`、
+> `opencode.json` 顶层 `dcae` 键或角色智能体文件任一命中）。普通项目里它静默跳过，不报错、不写入、
+> 不建内核。因此可以全局安装后在任意项目使用，不会干扰非 DCAE 项目。
 
 ## 使用流程（五步）
 
@@ -37,6 +41,8 @@ npx dcae-oc init --model <provider/model> --plugin <插件引用>
 # 例：npx dcae-oc init . --model <provider/model> --plugin <path-to-plugin>
 git add -A && git commit -m "dcae init"
 ```
+
+若插件已全局安装，也可直接在 OpenCode 会话内执行 **`/dcae-init`** 完成同样初始化（无需 `npx`）。
 
 产出：四角色智能体（`.opencode/agents/dcae-*.md`）、`opencode.json`（插件引用 + 权限 + `dcae.model`）、`gates.yaml`（门禁命令表，**人类所有，按项目实际修改**）、AGENTS.md 协议块、目录骨架。
 

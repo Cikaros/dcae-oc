@@ -2,7 +2,36 @@
 
 本文件记录 dcae-oc 的显著变更。版本遵循语义化版本。
 
-## 0.1.0 — 未发布
+## 0.1.1
+
+修复全局安装下的启动行为缺陷：插件不再在非 DCAE 项目里报错。
+
+### 修复
+
+- **非 DCAE 项目不再拒绝启动**：此前插件对 `<项目>/.opencode/agents/dcae-*.md` 做 fail-closed 检查，
+  一旦缺失即 `throw` 并显示「插件拒绝启动」。全局安装的插件会在每个 location 执行 setup，
+  导致在任意普通项目中打开 OpenCode 都会看到该报错——这是缺陷，不是预期。
+  - 改为**项目意图探测**（只读、无副作用）：命中 `.dcae/`、`gates.yaml`、`tasks/*.yaml`、
+    `opencode.json(c)` 顶层 `dcae` 键或角色智能体文件，方视为 DCAE 项目并激活内核；
+  - 非 DCAE 项目**静默跳过**（不注册工具、不建内核、不抛错、无日志噪声）；
+  - 探测排在建内核之前——避免旧行为在报错前已由 Kernel 构造 `mkdir .dcae/` 的副作用。
+- **角色智能体缺失改为降级而非致命**：DCAE 项目但脚手架不全时，内核保持**未就绪**（不调度），
+  不再抛错。
+- 新增 **`/dcae-init`** 命令：任何 location 均可注册，供用户显式初始化当前项目
+  （写入 `.opencode/agents`、`opencode.json`、`gates.yaml` 等脚手架）。
+
+### 变更
+
+- `initProject` 的 `pluginRef`/`model` 支持显式 `null`：全局安装场景不重复声明 `plugins`、
+  使用宿主默认模型。
+- `agentsPresent` 收敛为 `src/init/detect.ts` 中的单一定义（`init.ts` 再导出）。
+
+### 测试
+
+- 新增 `test/unit/detect.test.ts`（9 例）：空目录/普通项目/各信号命中/无副作用/init 后探测/
+  缺 agents 降级/`null` 选项渲染。单元测试 85 → **94**。
+
+## 0.1.0
 
 首个可发布版本（OpenCode V2 ≥ 2.3.0）。
 

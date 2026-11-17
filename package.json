@@ -1,6 +1,6 @@
 {
   "name": "dcae-oc",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DCAE-OC deterministic kernel as an OpenCode V2 server plugin: task DAG in isolated worktrees, least-privilege sessions, evidence-gated merges, human inbox. Includes the `dcae` CLI.",
   "license": "MIT",
   "type": "module",

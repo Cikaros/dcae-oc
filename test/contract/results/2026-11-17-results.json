@@ -5,7 +5,7 @@
     "ok": true,
     "detail": {
       "createStatus": 200,
-      "id": "ses_mwkd2gwht10000000000000000",
+      "id": "ses_mwkh2gott10000000000000000",
       "metadata": {
         "task": "T-CONTRACT",
         "attempt": 1
@@ -91,9 +91,9 @@
     "name": "worktree 签名",
     "ok": true,
     "detail": {
-      "projectID": "d550f83f72ff5d0c2a9950dd56e094b9affeb6b5",
+      "projectID": "ae8933d168a7a7fdf2fe17ff4ae9d283d6dcc1bf",
       "create": {
-        "directory": "<worktree>\\dcae-contract"
+        "directory": "<abs>"
       },
       "listCount": 2,
       "remove": "ok",
@@ -105,7 +105,7 @@
     "name": "工具权限粒度",
     "ok": true,
     "detail": {
-      "session": "ses_e17a0b8ffffeTYMWtuiS9G4K5f",
+      "session": "ses_e173a35e8ffe6U38ze4XbUreqO",
       "assertWithDenyRule": "denied: Tool.Error: Permission denied: dcae.probe"
     }
   },
@@ -157,7 +157,7 @@
     "ok": true,
     "detail": {
       "subscription": "function",
-      "ambientLocation": "<tmp>\\dcae-contract"
+      "ambientLocation": "<abs>"
     },
     "note": "跨 location 半由外部 runner 判定"
   },

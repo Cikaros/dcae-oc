@@ -14,12 +14,12 @@ export function pluginRoot(): string {
 }
 
 export interface InitOptions {
-  /** 插件引用形态：本地目录绝对路径（默认）或 npm 包名。 */
-  pluginRef?: string;
+  /** 插件引用形态：本地目录绝对路径（默认）或包名；显式 null = 不写 plugins 条目（依赖全局安装）。 */
+  pluginRef?: string | null;
   /** 测试运行器（gates.yaml 的 argv[0]）。 */
   testRunner?: string;
-  /** 内核会话模型（provider/id；写入 opencode.json 的 dcae.model——实测 ctx.options 通道不可用）。 */
-  model?: string;
+  /** 内核会话模型（`provider/id`）；显式 null = 不写（用宿主默认模型）。 */
+  model?: string | null;
   dryRun?: boolean;
 }
 
@@ -27,9 +27,9 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
   const root = pluginRoot();
   const written: string[] = [];
   const skipped: string[] = [];
-  const pluginRef = opts.pluginRef ?? root;
+  const pluginRef = opts.pluginRef === undefined ? root : opts.pluginRef;
   const runner = opts.testRunner ?? 'bun';
-  const model = opts.model ?? 'scnet/DeepSeek-V4.1-Flash';
+  const model = opts.model === undefined ? 'scnet/DeepSeek-V4.1-Flash' : opts.model;
 
   const put = (rel: string, content: string): void => {
     const p = join(target, rel);
@@ -60,10 +60,15 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
     }
   }
 
-  // 2. opencode.json（纯 JSON：实测本平台 jsonc 中文注释解析失败——2026-11-16 M0 实测；
-  //    插件引用 + dcae.model + V2 有序权限规则数组）
+  // 2. opencode.json（纯 JSON——jsonc 中文注释在本平台解析失败；插件引用 + dcae.model + 权限规则数组）
+  //    pluginRef/model 为 null 时对应条目留空/省略（全局安装场景不重复声明 plugins）。
   const tpl = readFileSync(join(root, 'templates', 'opencode.jsonc'), 'utf8');
-  put('opencode.json', tpl.replace('{{PLUGIN_REF}}', JSON.stringify(pluginRef)).replace('{{DCAE_MODEL}}', JSON.stringify(model)));
+  const pluginsBlock = pluginRef === null ? '"plugins": []' : `"plugins": [\n    ${JSON.stringify(pluginRef)}\n  ]`;
+  const dcaeBlock = model === null ? '"dcae": {}' : `"dcae": {\n    "model": ${JSON.stringify(model)}\n  }`;
+  const rendered = tpl
+    .replace(/"plugins":\s*\[\s*\{\{PLUGIN_REF\}\}\s*\]/, pluginsBlock)
+    .replace(/"dcae":\s*\{\s*"model":\s*\{\{DCAE_MODEL\}\}\s*\}/, dcaeBlock);
+  put('opencode.json', rendered);
 
   // 3. gates.yaml（人类所有）
   put('gates.yaml', readFileSync(join(root, 'templates', 'gates.yaml'), 'utf8').replaceAll('{{TEST_RUNNER}}', runner));
@@ -99,11 +104,5 @@ export function initProject(target: string, opts: InitOptions = {}): { written: 
   return { written, skipped };
 }
 
-/** 插件启动校验用：目标项目智能体文件齐备性。 */
-export function agentsPresent(target: string): { ok: boolean; missing: string[] } {
-  const missing: string[] = [];
-  for (const f of ['dcae-planner.md', 'dcae-dev.md', 'dcae-tester.md', 'dcae-reviewer.md'] as const) {
-    if (!existsSync(join(target, '.opencode', 'agents', f))) missing.push(f);
-  }
-  return { ok: missing.length === 0, missing };
-}
+/** 插件启动校验用：目标项目智能体文件齐备性（实现见 init/detect.ts，单一定义）。 */
+export { agentsPresent } from './detect.ts';
