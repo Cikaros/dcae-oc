@@ -189,7 +189,29 @@ export async function promote(kernel: Kernel, mainBranch: string): Promise<{ ok:
   if (!mergeDir) return { ok: false, detail: '合并工作树不可用' };
   const gates = await runGlobalGates(kernel, mergeDir, 'promote', integ);
   if (!gates.ok) return { ok: false, detail: `promote 前全局门禁失败：${gates.signature}` };
-  const ff = git(kernel.opts.canonical, ['fetch', '.', `${INTEGRATION_REF}:${mainBranch}`]);
+  // 实测缺陷（2026-11-17，已复现）：`git fetch . <ref>:<branch>` 拒绝更新**当前已检出**的分支
+  // （canonical 目录常态即检出于 main）——fatal: refusing to fetch into branch 'refs/heads/main'。
+  // 正确做法：
+  //  - 已检出的目标分支：`merge --ff-only`（同时推进 ref 与工作树；非 ff 时安全失败）；
+  //  - 非检出分支：先验祖先关系，再 update-ref 原子推进。
+  const cur = git(kernel.opts.canonical, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  const curBranch = cur.ok ? cur.stdout.trim() : '';
+  if (curBranch === mainBranch) {
+    const ff = git(kernel.opts.canonical, [...GIT_IDENTITY, 'merge', '--ff-only', INTEGRATION_REF]);
+    if (!ff.ok) {
+      const why = /Not possible to fast-forward|diverged|unrelated/i.test(ff.stderr + ff.stdout)
+        ? `${mainBranch} 与 integration 已分叉（需人工 rebase/merge）`
+        : (ff.stderr.trim() || ff.stdout.trim()).slice(0, 200);
+      return { ok: false, detail: `fast-forward 失败：${why}` };
+    }
+    return { ok: true };
+  }
+  const resolvedMain = revParse(kernel.opts.canonical, mainBranch);
+  if (resolvedMain) {
+    const anc = git(kernel.opts.canonical, ['merge-base', '--is-ancestor', resolvedMain, integ]);
+    if (!anc.ok) return { ok: false, detail: `非 fast-forward：${mainBranch} 不是 integration 的祖先（需人工 rebase/merge）` };
+  }
+  const ff = git(kernel.opts.canonical, ['update-ref', `refs/heads/${mainBranch}`, integ]);
   if (!ff.ok) return { ok: false, detail: `fast-forward 失败：${ff.stderr.slice(0, 200)}` };
   return { ok: true };
 }
