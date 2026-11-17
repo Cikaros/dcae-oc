@@ -1,73 +1,121 @@
-# dcae-oc — DCAE-OC 内核（OpenCode V2 插件）
+# dcae-oc — DCAE-OC 确定性开发内核（OpenCode V2 插件）
 
-确定性内核：把已批准的计划变成任务 DAG，在隔离 git worktree 中以最小权限会话运行每个任务；只接受内核产出的证据；受控合并列车；判断性决策进人类收件箱。含 `dcae` CLI。
+**让 LLM 编码会话在受控流水线中可信地交付真实项目。**
 
-上游规范与设计文档见 `E:\Code\DCAE-OC\`（1.4 规范、项目设计 v1.0、架构设计 v1.0）。
+DCAE-OC 是一个运行在 OpenCode V2 服务器内的确定性内核插件：它把已批准的计划变成任务 DAG，在隔离的 git worktree 中以最小权限会话运行每个任务，用门禁与证据验收工作，经受控合并列车集成，并把所有判断性决策送入人类收件箱。LLM 会话负责规划、实现与审查；**内核掌管状态、范围、证据与排序**。
 
-## 安装（OpenCode 官方插件形态）
+> 设计规范：`E:\Code\DCAE-OC\`（1.4 版设计稿 + 项目设计/架构设计 v1.0 + 平台调研存档）
 
-按官方 Build plugins › Publish/Load：**已发布插件就是一个 npm 包**。三种安装方式：
+## 适用场景
 
-### A. 发布后安装（标准形态）
+- 多步骤真实项目（如"参考现有项目实现一个新服务/工具"），需要 LLM 会话长期、分阶段、可审计地交付
+- 对"会话改了什么、为什么可信、谁批准的"有严格要求的团队或个人
+- 希望 LLM 会话**最小权限运行**（写范围限定、命令白名单、审查闭环）而非自由操作
+
+**不适合**：单文件小改动、交互式问答、无 git 的目录。
+
+## 安装
+
+**前置**：OpenCode V2（≥2.3.0）、Bun、目标项目是 git 仓库。
 
 ```sh
-# 发布（维护者，一次性）
-cd dcae-oc && npm publish
-
-# 用户安装（全局插件缓存，对所有项目生效）
+# 方式 A：npm 发布后（推荐）
 opencode plugin add dcae-oc
-
-# 或仅在单个项目启用：项目 opencode.json
-{ "plugins": ["dcae-oc"] }
-```
-
-### B. Git 仓库安装（未发 npm 时）
-
-```sh
+# 方式 B：git 仓库
 opencode plugin add github:Cikaros/dcae-oc
-# 或 opencode.json："plugins": ["github:Cikaros/dcae-oc"]
+# 方式 C：本地目录（开发态）
+# 目标项目 opencode.json → "plugins": ["E:/Code/DCAE-OC/plugin"]
 ```
 
-### C. 本地目录安装（开发态）
+## 使用流程（五步）
 
-```json
-{ "plugins": ["E:/Code/DCAE-OC/plugin"] }
-```
-
-## 初始化目标项目（必须）
-
-安装插件后，在**目标项目**根目录跑一次脚手架（写入四角色智能体、`opencode.json`、`gates.yaml`、AGENTS.md 协议块、目录骨架——插件启动时校验智能体存在，缺失即拒绝加载）：
+### ① 初始化目标项目
 
 ```sh
-npx dcae-oc init        # 全局/缓存安装形态
-# 或本地开发形态：
-bun E:/Code/DCAE-OC/plugin/src/cli.ts init . --plugin "E:/Code/DCAE-OC/plugin" --runner bun
+cd <目标项目>
+npx dcae-oc init --model <provider/model> --plugin <插件引用>
+# 例：npx dcae-oc init . --model scnet/DeepSeek-V4.1-Flash --plugin E:/Code/DCAE-OC/plugin
+git add -A && git commit -m "dcae init"
 ```
 
-然后 `git add -A && git commit`（worktree 分发依赖这些文件入库），启动 OpenCode 即生效。
+产出：四角色智能体（`.opencode/agents/dcae-*.md`）、`opencode.json`（插件引用 + 权限 + `dcae.model`）、`gates.yaml`（门禁命令表，**人类所有，按项目实际修改**）、AGENTS.md 协议块、目录骨架。
 
-把 `gates.yaml` 改成项目实际的测试/typecheck 命令（**人类所有**；任务 `checks.run` 只能引用这里的命令 id）。
+### ② 编写计划产物（人类为作者）
 
-## CLI
+- `specs/<ID>.md`：规范（YAML front-matter `status: approved` + 正文）——**只有人类能把规范置为 approved**
+- `tasks/<ID>.yaml`：任务定义（目标、依赖 DAG、写范围 scope.write、shell 白名单引用、验收 checks、预算）
+- `gates.yaml`：命令表（validate 会强制 checks 只能引用这里的命令 id）
 
 ```sh
-dcae validate                 # 任务/门禁静态校验
-dcae status                   # 任务状态投影
-dcae inbox list / decide INBOX-xxxx --option y / sync
-dcae retry <TASK> / revalidate <TASK> / promote [--branch main] / approve-spec <ID>
-dcae verify                   # 无状态只读核查（CI）
+dcae validate    # 静态校验：引用合法性/保护路径重叠/DAG 无环
+dcae plan-approve <TASK-ID>...   # 批准计划（任务进入流水线）
 ```
 
-## 开发
+### ③ 启动 OpenCode，内核自动运转
 
 ```sh
-bun install && bun run typecheck && bun test    # 80 单测
-bun test/contract/run.ts [--with-model]          # M0 契约测试（起真实 opencode serve 实跑十四项）
+opencode        # 或 opencode serve --port <N>
 ```
 
-## 实测快照（2026-11-16，OpenCode v2.3.0）
+内核自动：调度 READY 任务 → 创建隔离 worktree + 最小权限会话（模型/权限/环境原子施加）→ dev 实现并 `dcae_submit` → 门禁执行（`bun test` 等）→ 审查会话出 verdict → 冻结 ref → 合并列车 → `MERGED`。
 
-- M0 契约十四项：12 PASS / 0 FAIL / 2 INCONCLUSIVE（需真实 LLM，`--with-model`）；结果存档 `test/contract/results/`。
-- **安装后的包已按官方要求实测**（"test the installed package, not only a workspace-linked copy"）：npm pack → 独立安装 → OpenCode 加载 → setup 全阶段 + RPC 自调用 + 内核 leader 初始化全部通过。
-- 平台行为注记：目标项目配置用**纯 JSON**（本平台解析带中文注释的 jsonc 失败）；插件装载由 location 首个 API 请求触发；RPC output schema 须用 JSON Schema（zod 无法被编码）。详见项目设计 D-6/D-7。
-- 插件未装载排查：设 `DCAE_CONTRACT=1` 启动，查目标项目 `.dcae/setup-probe.log`。
+全程观察：
+
+```sh
+dcae status             # 任务状态投影
+# TUI 内：/dcae-status   # 内核概览与任务明细
+git -C <项目> log --oneline          # 内核提交与合并记录
+git -C <项目> for-each-ref refs/dcae  # accepted/<task> 与 integration
+```
+
+### ④ 处理收件箱（判断性决策）
+
+会话受阻/审查升级/预算耗尽时，内核创建收件箱项并暂停任务：
+
+```sh
+dcae inbox list                          # 查看
+dcae decide INBOX-000001 --option <id>   # 决策（≤5s 生效）
+```
+
+TUI 内等价：`/dcae-inbox`、`/dcae-decide INBOX-000001 <option>`。
+
+### ⑤ 发布
+
+```sh
+dcae promote [--branch main]   # 重跑全局门禁后把 integration fast-forward 到主分支（人工执行）
+```
+
+## 命令参考
+
+| CLI（`dcae <cmd>`） | TUI 斜杠命令 | 作用 |
+| --- | --- | --- |
+| `init` | — | 目标项目脚手架 |
+| `validate` | — | 计划静态校验 |
+| `plan-approve <TASK>...` | `/dcae-plan-approve` | 批准计划 |
+| `status` | `/dcae-status` | 状态投影 |
+| `inbox list` | `/dcae-inbox` | 收件箱清单 |
+| `decide INBOX-ID --option X` | `/dcae-decide` | 决策 |
+| `retry / revalidate <TASK>` | — | 失败重试 / 重验证 |
+| `approve-spec <SPEC-ID>` | `/dcae-approve-spec` | 批准规范 |
+| `promote` | — | integration → 主分支 |
+| `verify` | — | 无状态只读核查（CI 可用） |
+
+## MCP Server 模式（wir-mcp 形态）
+
+DCAE-OC 管控的项目可以交付 MCP server 类产物——本仓的姊妹项目 `wir-mcp`（由 DCAE-OC 全链管控实现）即为一例：它把 WIR/2.0 文档协议暴露为 MCP 工具。其门禁（`bun test`）与审查闭环由内核执行，开发会话只负责实现。
+
+## 真实验证记录（2026-11-16/17，OpenCode v2.3.0）
+
+- M0 平台契约：**12 PASS / 0 FAIL / 2 LLM 依赖待补**（`test/contract/results/`）
+- 单元测试 80/80；安装态包（npm pack → 独立安装）加载验证通过
+- 全链 e2e：demo 项目与真实项目（wir-mcp，双任务 DAG）均到达 **MERGED**（真实 DeepSeek 会话实现 + 门禁 + 审查 + 合并列车），事件链完整留痕 `.dcae/state/events.jsonl`
+- 已知限制与排障见 `test/contract/results/2026-11-17-review.md`
+
+## 排障
+
+| 症状 | 处理 |
+| --- | --- |
+| 插件未装载 | 设 `DCAE_CONTRACT=1` 重启，查 `<项目>/.dcae/setup-probe.log`；确认 opencode.json plugins 路径存在且为**纯 JSON**（中文注释 jsonc 解析会失败） |
+| 会话长时间无进展 | `dcae status` 看状态；内核会在无提交空闲时注入提醒、预算到点强制 FAILED（可 `dcae retry`） |
+| 心跳停更（`.dcae/lock.json` heartbeat 陈旧） | serve 进程假死——重启 serve 即可，follower 接管修复会自动恢复领导权 |
+| 收件箱决策未生效 | 确认 serve 在跑且从**目标项目目录**执行 dcae 命令（无显式目录时以 cwd 定位项目） |
