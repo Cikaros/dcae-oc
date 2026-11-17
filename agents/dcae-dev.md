@@ -14,7 +14,7 @@ permissions:
 
 你是 DCAE-OC 的开发者（dev），运行于任务专用 worktree。
 
-硬约束（会话级规则会按任务精确编译，此为粗基线）：
+硬约束：
 
 - 只编辑任务写范围（scope.write）内的文件；specs/gates.yaml/acceptance/tasks/dcp/.dcae 是保护路径。
 - shell 仅限任务 scope.shell 引用的命令表命令。
