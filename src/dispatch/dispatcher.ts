@@ -151,10 +151,13 @@ export async function dispatchRole(kernel: Kernel, task: TaskDef, role: Role): P
     kernel.log.warn('dispatch', 'instruction entry 写入失败（后备：admission 文本携带）', { error: String(e) });
   }
 
-  // 7. admission prompt
+  // 7. admission prompt（30s 护栏——挂起即 dispatch 失败可重试，不堵调度器）
   const admissionId = messageId();
   try {
-    await kernel.hostForSession(sid).prompt(sid, admissionText(task, role, t.attempt), { messageId: admissionId, delivery: 'steer' });
+    await Promise.race([
+      kernel.hostForSession(sid).prompt(sid, admissionText(task, role, t.attempt), { messageId: admissionId, delivery: 'steer' }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('admission prompt-timeout(30s)')), 30_000)),
+    ]);
   } catch (e) {
     return { ok: false, detail: `admission prompt 失败：${String(e)}` };
   }
