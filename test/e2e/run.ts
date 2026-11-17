@@ -11,9 +11,9 @@ import { join } from 'node:path';
 import { initProject, pluginRoot } from '../../src/init/init.ts';
 import { enqueue } from '../../src/kernel/mailbox.ts';
 
-function arg(name: string, fallback?: string): string | undefined {
+function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(name);
-  return i >= 0 ? process.argv[i + 1] : fallback;
+  return (i >= 0 ? process.argv[i + 1] : fallback) ?? fallback;
 }
 
 const ROOT = pluginRoot();

@@ -7,7 +7,7 @@ console.log('no-auth /api/info →', r1.status);
 // 2. 无凭据 GET messages（需要真实 session——先带密码建一个）
 const auth = { authorization: 'Basic ' + Buffer.from(`opencode:${pw}`).toString('base64') };
 const cs = await fetch(`${base}/api/session`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'auth-probe' }) });
-const sid = (await cs.json())?.data?.id;
+const sid = ((await cs.json()) as any)?.data?.id;
 console.log('session =', sid);
 const r2 = await fetch(`${base}/api/session/${sid}/message?limit=10`);
 console.log('no-auth messages →', r2.status, (await r2.text()).slice(0, 120));
@@ -18,3 +18,5 @@ console.log('env keys of interest:', Object.keys(process.env).filter((k) => /OPE
 for (const k of Object.keys(process.env)) {
   if (/OPENCODE|PASSWORD|TOKEN/i.test(k)) console.log(' ', k, '=', String(process.env[k]).slice(0, 24));
 }
+
+export {};

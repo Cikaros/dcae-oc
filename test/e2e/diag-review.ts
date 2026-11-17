@@ -3,7 +3,7 @@
  */
 import { spawnSync } from 'node:child_process';
 
-const [, , port, pw, wt, sid] = process.argv;
+const [, , port, pw, wt = "", sid] = process.argv;
 const base = `http://127.0.0.1:${port}`;
 const auth = { authorization: 'Basic ' + Buffer.from(`opencode:${pw}`).toString('base64') };
 const loc = encodeURIComponent(JSON.stringify({ directory: wt.replace(/\\/g, '/') }));
@@ -26,3 +26,5 @@ try {
   console.log('non-JSON body:', text.slice(0, 400));
 }
 void spawnSync;
+
+export {};

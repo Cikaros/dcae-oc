@@ -1,5 +1,5 @@
 /** dump 会话日志条目结构：bun test/e2e/diag-log.ts <port> <pw> <wt> <sid> */
-const [, , port, pw, wt, sid] = process.argv;
+const [, , port, pw, wt = "", sid] = process.argv;
 const base = `http://127.0.0.1:${port}`;
 const auth = { authorization: 'Basic ' + Buffer.from(`opencode:${pw}`).toString('base64') };
 const loc = encodeURIComponent(JSON.stringify({ directory: wt.replace(/\\/g, '/') }));
@@ -13,3 +13,5 @@ for (const it of arr.slice(-8)) {
   console.log('ITEM keys=' + Object.keys(it).join(','), 'type=' + (it.type ?? it.kind ?? '?'));
   console.log('  ' + JSON.stringify(it).slice(0, 300));
 }
+
+export {};

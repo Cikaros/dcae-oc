@@ -1,5 +1,5 @@
 /** follow 模式读日志流 5 秒：bun test/e2e/diag-logfollow.ts <port> <pw> <wt> <sid> */
-const [, , port, pw, wt, sid] = process.argv;
+const [, , port, pw, wt = "", sid] = process.argv;
 const base = `http://127.0.0.1:${port}`;
 const auth = { authorization: 'Basic ' + Buffer.from(`opencode:${pw}`).toString('base64') };
 const loc = encodeURIComponent(JSON.stringify({ directory: wt.replace(/\\/g, '/') }));
@@ -27,3 +27,5 @@ try {
   clearTimeout(timer);
 }
 console.log('total frames =', frames);
+
+export {};

@@ -1,5 +1,5 @@
 /** 列出并清理僵尸会话：bun test/e2e/diag-sessions.ts <port> <pw> <projDir> [--kill] */
-const [, , port, pw, proj, doKill] = process.argv;
+const [, , port, pw, proj = "", doKill] = process.argv;
 const base = `http://127.0.0.1:${port}`;
 const auth = { authorization: 'Basic ' + Buffer.from(`opencode:${pw}`).toString('base64') };
 const loc = encodeURIComponent(JSON.stringify({ directory: proj.replace(/\\/g, '/') }));
@@ -19,3 +19,5 @@ if (doKill === '--kill') {
   }
   console.log('cleanup done');
 }
+
+export {};

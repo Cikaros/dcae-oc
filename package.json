@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "dcae": "./src/cli.ts"
+    "dcae": "src/cli.ts"
   },
   "main": "./src/index.ts",
   "exports": {
@@ -16,10 +16,12 @@
     "src",
     "agents",
     "templates",
-    "README.md"
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "bun": ">=1.2.0"
   },
   "keywords": [
     "opencode",
@@ -40,7 +42,7 @@
     "contract": "bun test/contract/run.ts"
   },
   "dependencies": {
-    "@opencode/plugin": ">=2.3.0",
+    "@opencode/plugin": "^2.3.0",
     "yaml": "^2.6.0",
     "zod": "^3.24.0"
   },

@@ -106,10 +106,15 @@ DCAE-OC 管控的项目可以交付 MCP server 类产物——本仓的姊妹项
 
 ## 真实验证记录（2026-11-16/17，OpenCode v2.3.0）
 
-- M0 平台契约：**12 PASS / 0 FAIL / 2 LLM 依赖待补**（`test/contract/results/`）
-- 单元测试 80/80；安装态包（npm pack → 独立安装）加载验证通过
-- 全链 e2e：demo 项目与真实项目（wir-mcp，双任务 DAG）均到达 **MERGED**（真实 DeepSeek 会话实现 + 门禁 + 审查 + 合并列车），事件链完整留痕 `.dcae/state/events.jsonl`
-- 已知限制与排障见 `test/contract/results/2026-11-17-review.md`
+- M0 平台契约：**14 PASS / 0 FAIL / 2 LLM 依赖待补**（`test/contract/results/2026-11-17-snapshot.md`）
+- 单元测试 **85/85**；`tsc --noEmit` 全绿；安装态包（npm pack → 独立 `npm i`）加载验证通过
+- 安装态全链 e2e：全新项目经安装态插件包推进至 **MERGED**，且**审查闭环零人工**（无 retry / decision 事件；`test/contract/results/2026-11-17-real-scenario-test.md`）
+- 真实项目 e2e（`wir-mcp`，双任务 DAG）：**T-WIR-001 + T-WIR-002 双 MERGED**（真实 DeepSeek 会话实现 + 门禁 + 审查 + 合并列车），事件链完整留痕 `.dcae/state/events.jsonl`
+- 已知限制与排障见 `test/contract/results/2026-11-17-review.md` 与 `2026-11-17-real-scenario-test.md`
+
+## 许可
+
+MIT（见 `LICENSE`）。
 
 ## 排障
 
