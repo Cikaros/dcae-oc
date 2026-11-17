@@ -89,9 +89,10 @@ export default Plugin.define({
     }
 
     // 内核初始化（异步，R9）+ 事件订阅（R5：只做唤醒）
+    // Scheduler 无论 leader/follower 都启动——tick 内含 follower 接管循环
+    // （实测缺陷 11：仅 leader 创建 Scheduler 时，leader 死亡后无任何实例能接管）
     const initPromise = kernel.ready ? Promise.resolve() : kernel.init();
     void initPromise.then(async () => {
-      if (!kernel.isLeader()) return;
       const { Scheduler } = await import('./kernel/scheduler.ts');
       if (!kernel.scheduler) {
         kernel.scheduler = new Scheduler(kernel);
